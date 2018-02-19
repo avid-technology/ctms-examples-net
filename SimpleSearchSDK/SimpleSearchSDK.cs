@@ -33,7 +33,7 @@ namespace SimpleSearchSDK
                 string password = args[4];
                 string searchExpression = args[5].Trim('\'');
 
-                Uri upstreamServerUrl = new Uri(string.Format("https://{0}", apiDomain));
+                Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
                 AssetAccessClient assetAccessClient
                     = PlatformTools.PlatformToolsSDK.CreateAssetAccessClient(upstreamServerUrl, serviceType
                         , realm
@@ -58,13 +58,13 @@ namespace SimpleSearchSDK
                             {
                                 if (searchResult.AssetList.Any())
                                 {
-                                    sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, searchExpression));
+                                    sb.AppendLine($"Page#: {++pageNo}, search expression: '{searchExpression}'");
                                     foreach (Asset asset in searchResult.AssetList)
                                     {
                                         BaseInfo baseInfo = asset.Base;
                                         CommonAttributes commonAttributes = asset.Common;
 
-                                        sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, asset.Base.Id, asset.Common.Name));
+                                        sb.AppendLine($"Asset#: {++assetNo}, id: {asset.Base.Id}, name: '{asset.Common.Name}'");
                                     }
                                 }
 
@@ -82,8 +82,7 @@ namespace SimpleSearchSDK
                 }
                 else
                 {
-                    Console.WriteLine("Couldn't create AssetAccessClient for serviceType: '{0}', realm: '{1}', username: '{2}', upstreamServerUrl: <{3}>"
-                        , serviceType, realm, username, upstreamServerUrl);
+                    Console.WriteLine($"Couldn't create AssetAccessClient for serviceType: '{serviceType}', realm: '{realm}', username: '{username}', upstreamServerUrl: <{upstreamServerUrl}>");
                 }
                 Console.WriteLine("End");
             }            
