@@ -22,22 +22,23 @@ namespace AdvancedSearch
     {
         public static void Main(string[] args)
         {
-            if (6 != args.Length)
+            if (7 != args.Length)
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <username> <password> <advancedsearchdescriptionfilename>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> <advancedsearchdescriptionfilename>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
             }
             else
             {
                 string apiDomain = args[0];
                 string serviceType = args[1];
                 string realm = args[2];
-                string username = args[3];
-                string password = args[4];
-                string advancedSearchDescriptionFileName = args[5];
+                string oauth2token = args[3];
+                string username = args[4];
+                string password = args[5];
+                string advancedSearchDescriptionFileName = args[6];
 
                 if (File.Exists(advancedSearchDescriptionFileName))
                 {
-                    HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
+                    HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
 
                     bool successfullyAuthorized = null != httpClient;
                     if (successfullyAuthorized)
@@ -45,10 +46,10 @@ namespace AdvancedSearch
                         try
                         {
                             var registryServiceVersion = "0";
-                            string defaultAdvancedSearchUriTemplate = String.Format("https://{0}/apis/{1};version={2};realm={3}/searches", apiDomain, serviceType, 0, realm);
-                            List<String> advancedSearchUriTemplates = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, new List<string> { serviceType }, registryServiceVersion, "search:searches", defaultAdvancedSearchUriTemplate);
+                            string defaultAdvancedSearchUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/searches", apiDomain, serviceType, 0, realm);
+                            string advancedSearchUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "search:searches", defaultAdvancedSearchUriTemplate, realm);
 
-                            UriTemplate advancedSearchUrlTemplate = new UriTemplate(advancedSearchUriTemplates[0]);
+                            UriTemplate advancedSearchUrlTemplate = new UriTemplate(advancedSearchUriTemplate);
                             Uri advancedSearchResultPageUrl = new Uri(advancedSearchUrlTemplate.Resolve());
 
 

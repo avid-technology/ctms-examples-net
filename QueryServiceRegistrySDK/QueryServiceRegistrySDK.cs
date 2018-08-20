@@ -1,11 +1,9 @@
-﻿  using Avid.Platform.SDK;
+﻿using Avid.Platform.SDK;
 using Avid.Platform.SDK.Authorization;
 using Avid.Platform.SDK.Model.CtmsRegistry;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace QueryServiceRegistrySDK
 {
@@ -16,18 +14,19 @@ namespace QueryServiceRegistrySDK
         /// </summary>
         static void Main(string[] args)
         {
-            if (3 != args.Length)
+            if (4 != args.Length)
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <username> <password>");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <oauth2token> <username> <password>");
             }
             else
             {
                 string apiDomain = args[0];
-                string username = args[1];
-                string password = args[2];
+                string oAuth2Token = args[1];
+                string username = args[2];
+                string password = args[3];
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
-                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new MCUXAuthorizationConnection(upstreamServerUrl, username, password)))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oAuth2Token, username, password)))
                 {
                     CtmsRegistryInfo registryInfo = registryClient.GetRegistryInfo();
                     StringBuilder sb = new StringBuilder();

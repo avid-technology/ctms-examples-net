@@ -23,35 +23,35 @@ namespace OrchestrationProcessQuery
     {
         public static void Main(string[] args)
         {
-            if (5 != args.Length || "'".Equals(args[4]) || !args[4].StartsWith("'") || !args[4].EndsWith("'"))
+            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <realm> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine("Usage: {0} <apidomain> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
             }
             else
             {
                 string apiDomain = args[0];
                 string realm = args[1];
-                string username = args[2];
-                string password = args[3];
-                string rawSearchExpression = args[4].Trim('\'');
+                string oauth2token = args[2];
+                string username = args[3];
+                string password = args[4];
+                string rawSearchExpression = args[5].Trim('\'');
 
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
                 {
                     try
-                    {
-                        
+                    {                        
                         const string orchestrationServiceType = "avid.orchestration.ctc";
                         
                         var registryServiceVersion = "0";
-                        string defaultProcessQueryUriTemplate = String.Format("https://{0}/apis/{1};version={2};realm={3}/process-queries/{{id}}{{?offset,limit,sort}}", apiDomain, orchestrationServiceType, 0, realm);
-                        List<String> processQueryUriTemplates = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, new List<string> { orchestrationServiceType }, registryServiceVersion, "orchestration:process-query", defaultProcessQueryUriTemplate);
+                        string defaultProcessQueryUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/process-queries/{{id}}{{?offset,limit,sort}}", apiDomain, orchestrationServiceType, 0, realm);
+                        string processQueryUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, orchestrationServiceType, registryServiceVersion, "orchestration:process-query", defaultProcessQueryUriTemplate, realm);
 
                         /// Doing the process query and write the results to stdout:
-                        UriTemplate processQueryUriTemplate = new UriTemplate(processQueryUriTemplates[0]);
-                        Uri processQueryURL = new Uri(processQueryUriTemplate.Resolve());
+                        UriTemplate processQueryUrlTemplate = new UriTemplate(processQueryUriTemplate);
+                        Uri processQueryURL = new Uri(processQueryUrlTemplate.Resolve());
 
                         httpClient.DefaultRequestHeaders.Remove("Accept");
                         httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");

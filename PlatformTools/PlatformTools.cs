@@ -2,14 +2,13 @@
 // Copyright 2016 by Avid Technology, Inc.
 //
 
-using Avid.Platform.SDK;
-using Avid.Platform.SDK.Authorization;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,27 +33,35 @@ namespace PlatformTools
             }
         }
 
-        /// <summary>
-        /// MCUX-identity-provider based authorization via credentials and cookies.
-        /// The used server-certificate validation is tolerant. Creates an authorized HttpClient instance,
-        /// following the MCUX-identity-provider authorization strategy.
-        /// The resulting HttpClient instance refers a set of cookies, which are required for the communication
-        /// with the platform. - Just use this HttpClient instance for future calls against the platform.
-        /// </summary>
-        /// <param name="apiDomain">address to get "auth"</param>
-        /// <param name="username">MCUX login</param>
-        /// <param name="password">MCUX password</param>
-        /// <returns>An authorized HttpClient instance, or null if something went wrong, esp. authorization went wrong.</returns>
-        public static HttpClient Authorize(string apiDomain, string username, string password)
+        private static WebRequestHandler DefaultWebRequestHandler(bool autoRedirect)
         {
-            WebRequestHandler webRequesthandler = new WebRequestHandler
+            WebRequestHandler wrh = new WebRequestHandler
             {
+                AllowAutoRedirect = autoRedirect,
                 CookieContainer = new CookieContainer(),
                 // Establish tolerant certificate check:
                 ServerCertificateValidationCallback = delegate { return true; },
                 UnsafeAuthenticatedConnectionSharing = true,
-                AllowAutoRedirect = false
+                ReadWriteTimeout = 500000,
+                UseCookies = false // Allows to set cookies after HttpClient creation.
             };
+            return wrh;
+        }
+
+        /// <summary>
+        /// OAuth2-identity-provider based authorization via via credentials and an OAuth2Token (= HTTP basic auth string).
+        /// The used server-certificate validation is tolerant. Creates an authorized HttpClient instance,
+        /// following the OAuth2-identity-provider authorization strategy.
+        /// Just use the returned HttpClient instance for future calls against the platform.
+        /// </summary>
+        /// <param name="apiDomain">address to get "auth"</param>
+        /// <param name="OAuth2Token">OAuth2 token</param>
+        /// <param name="username">Platform login</param>
+        /// <param name="password">Platform password</param>
+        /// <returns>An authorized HttpClient instance, or null if something went wrong, esp. authorization went wrong.</returns>
+        public static HttpClient Authorize(string apiDomain, string OAuth2Token, string username, string password)
+        {
+            WebRequestHandler webRequesthandler = DefaultWebRequestHandler(false);
 
             HttpClient httpClient = new HttpClient(webRequesthandler);
             httpClient.Timeout = DefaultRequestTimeout;
@@ -64,58 +71,67 @@ namespace PlatformTools
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
 
             // Get identity providers:
-            string rawAuthResult = httpClient.GetStringAsync(string.Format("https://{0}/auth", apiDomain)).Result;
+            string rawAuthResult = httpClient.GetStringAsync($"https://{apiDomain}/auth").Result;
             dynamic authResult = JObject.Parse(rawAuthResult);
             string urlIdentityProviders = authResult.SelectToken("$._links.auth:identity-providers[0].href");
 
-            // Select MC|UX identity provider and retrieve login URL:
+            // Select OAuth2 identity provider and retrieve login URL:
             string rawIdentityProvidersResult = httpClient.GetStringAsync(urlIdentityProviders).Result;
             dynamic identityProvidersResult = JObject.Parse(rawIdentityProvidersResult);
-            dynamic mcuxLoginHrefObject = identityProvidersResult.SelectToken("$._embedded.auth:identity-provider[?(@.kind == 'mcux')]._links.auth-mcux:login[0].href");
+            dynamic oAuthLoginHrefObject = identityProvidersResult.SelectToken("$._embedded.auth:identity-provider[?(@.kind == 'oauth')]._links.auth:ropc-default[0].href");
 
-            if (null == mcuxLoginHrefObject)
+            if (null == oAuthLoginHrefObject)
             {
-                // MCUX authentication not supported
+                // OAuth2 authentication not supported
                 return null;
             }
 
-            string urlLogin = mcuxLoginHrefObject.ToString();
+            string OAuth2EndPoint = oAuthLoginHrefObject.ToString();
 
             // Do the login:
-            JObject loginContent
-                = new JObject(
-                    new JProperty("username", username),
-                    new JProperty("password", password)
-                );
-            using (HttpContent content = new ObjectContent<JObject>(loginContent, new System.Net.Http.Formatting.JsonMediaTypeFormatter()))
+            IDictionary<string, string> loginArguments = new Dictionary<string, string>(3)
             {
-                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, urlLogin) { Content = content })
+                { "username", username },
+                { "password", password },
+                { "grant_type", "password" },
+            };
+
+            using (HttpContent content = new FormUrlEncodedContent(loginArguments))
+            {
+                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, OAuth2EndPoint) { Content = content })
                 {
+                    request.Headers.Add("Accept", "application/json");
+                    request.Headers.Add("Authorization", "Basic " + OAuth2Token);
+
                     using (HttpResponseMessage result = httpClient.SendAsync(request).Result)
                     {
                         if (HttpStatusCode.RedirectMethod == result.StatusCode || result.IsSuccessStatusCode)
                         {
-                            HttpClient httpKeepAliveClient = new HttpClient(webRequesthandler);
-                            httpKeepAliveClient.Timeout = DefaultRequestTimeout;
-                            httpKeepAliveClient.BaseAddress = new UriBuilder("https", apiDomain).Uri;
+                            string rawAuthorizationData = result.Content.ReadAsStringAsync().Result;
+                            dynamic authorizationData = JObject.Parse(rawAuthorizationData);                      
+                            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+
+                            HttpClient httpKeepAliveClient = new HttpClient(DefaultWebRequestHandler(false));
+                            httpKeepAliveClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+                            httpKeepAliveClient.BaseAddress = new Uri($"http://{apiDomain}");
                             httpKeepAliveClient.DefaultRequestHeaders.Add("Accept", "application/json");
                             tokenSource = new CancellationTokenSource();
                             Task sessionRefresher
-                                  = Task.Factory.StartNew(
-                                      async ignored =>
-                                      {
-                                          while (!tokenSource.Token.IsCancellationRequested)
-                                          {
-                                              await Task.Delay(120000, tokenSource.Token);
-                                              tokenSource.Token.ThrowIfCancellationRequested();
+                                = Task.Factory.StartNew(
+                                    async ignored =>
+                                    {
+                                        while (!tokenSource.Token.IsCancellationRequested)
+                                        {
+                                            await Task.Delay(120000, tokenSource.Token).ConfigureAwait(false);
+                                            tokenSource.Token.ThrowIfCancellationRequested();
 
-                                              SessionKeepAlive(httpKeepAliveClient);
-                                          }
-                                      }
-                                      , null
-                                      , tokenSource.Token
-                                      , TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning
-                                      , TaskScheduler.Default);
+                                            SessionKeepAlive(httpKeepAliveClient);
+                                        }
+                                    }
+                                    , null
+                                    , tokenSource.Token
+                                    , TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning
+                                    , TaskScheduler.Default);
                         }
                         else
                         {
@@ -134,9 +150,20 @@ namespace PlatformTools
         /// <param name="httpClient">The HttpClient against the platform.</param>
         public static void SessionKeepAlive(HttpClient httpClient)
         {
-            // TODO: this is a workaround, see {CORE-7359}. In future the access token prolongation API should be used.
-            string urlPing = string.Format("https://{0}/api/middleware/service/ping", httpClient.BaseAddress.Host);
-            HttpResponseMessage httpResponseMessage = httpClient.GetAsync(urlPing).Result;
+            string urlExtend = $"https://{httpClient.BaseAddress.Host}/auth/tokens/current/extension";
+            try
+            {
+                using (HttpContent refreshRequestContent = new StringContent(string.Empty))
+                {
+                    using (HttpResponseMessage httpResponseMessage = httpClient.PostAsync(urlExtend, refreshRequestContent).Result)
+                    {
+                    }
+                }
+            }
+            catch
+            {
+                // Nothing. Usually those exceptions can be ignored.
+            }
         }
 
         /// <summary>
@@ -145,11 +172,9 @@ namespace PlatformTools
         /// <param name="httpClient">The HttpClient against the platform.</param>
         public static void Logout(HttpClient httpClient)
         {
-            httpClient.DefaultRequestHeaders.Remove("Accept");
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
-
             /// Logout from platform:
-            string rawAuthResult = httpClient.GetStringAsync(string.Format("https://{0}/auth", httpClient.BaseAddress.Host)).Result;
+            string authUri = $"https://{httpClient.BaseAddress.Host}/auth";
+            string rawAuthResult = httpClient.GetStringAsync(authUri).Result;
             dynamic authResult = JObject.Parse(rawAuthResult);
             string urlCurrentToken = authResult.SelectToken("$._links.auth:token[?(@.name == 'current')].href").ToString();
 
@@ -157,8 +182,9 @@ namespace PlatformTools
             dynamic currentTokenResult = JObject.Parse(rawCurrentTokenResult);
             string urlCurrentTokenRemoval = currentTokenResult.SelectToken("$._links.auth-token:removal[0].href");
             // Should result in 204:
-            HttpResponseMessage httpResponseMessage = httpClient.DeleteAsync(urlCurrentTokenRemoval).Result;
-
+            using (HttpResponseMessage httpResponseMessage = httpClient.DeleteAsync(urlCurrentTokenRemoval).Result)
+            {
+            }
 
             /// Unregister the keep alive task:
             if (null != tokenSource)
@@ -172,71 +198,50 @@ namespace PlatformTools
                     // Yes, this is expected.
                 }
             }
-        }
+        }        
 
-        //public static List<String> findInRegistry(String apiDomain, List<String> serviceTypes, String registryServiceVersion, String resourceName, String orDefaultUriTemplate) throws IOException
-        public static List<String> FindInRegistry(HttpClient httpClient, String apiDomain, List<String> serviceTypes, String registryServiceVersion, String resourceName, String orDefaultUriTemplate)
+        public static string FindInRegistry(HttpClient httpClient, string apiDomain, string serviceType, string registryServiceVersion, string resourceName, string orDefaultUriTemplate, string realm)
         {
-            List<string> foundUriTemplates = new List<string>();   
             httpClient.DefaultRequestHeaders.Remove("Accept");
             httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
 
-            /// Check, whether simple search is supported:
-            Uri serviceRootsResourceURL = new Uri(string.Format("https://{0}/apis/avid.ctms.registry;version={1}/serviceroots", apiDomain, registryServiceVersion));
-            HttpResponseMessage searchesResponse = httpClient.GetAsync(serviceRootsResourceURL).Result;
-            HttpStatusCode searchesStatus = searchesResponse.StatusCode;
-            if (HttpStatusCode.OK == searchesStatus)
+            /// Check, whether simple search is supported:          
+            Uri serviceRootsResourceURL = new Uri($"https://{apiDomain}/apis/avid.ctms.registry;version={registryServiceVersion}/serviceroots");
+            using (HttpResponseMessage registryResultsResponse = httpClient.GetAsync(serviceRootsResourceURL).Result)
             {
-                    string rawSearchesResult = searchesResponse.Content.ReadAsStringAsync().Result;
+                HttpStatusCode registryResultStatus = registryResultsResponse.StatusCode;
+                if (HttpStatusCode.OK == registryResultStatus)
+                {
+                    string rawSearchesResult = registryResultsResponse.Content.ReadAsStringAsync().Result;
                     JObject serviceRootsResult = JObject.Parse(rawSearchesResult);
                     JObject resources = (JObject)serviceRootsResult.GetValue("resources");
                     var resourceToken = resources.GetValue(resourceName);
 
-                if (resourceToken != null)
-                {
-                    if (resourceToken is JArray)
+                    if (resourceToken != null)
                     {
-                        var asArray = (JArray)resourceToken;
-                        foreach (var item in asArray)
+                        var candidateSystemIds
+                                    = resourceToken.SelectTokens("..systems..systemID")                                        
+                                        .Select(it => it.ToString())
+                                        .ToArray();
+
+                        string effectiveRealm = null;
+                        if (!candidateSystemIds.Contains(realm))
                         {
-                            string href = item["href"].ToString();
-                            if (serviceTypes.Any(it => href.Contains(it)))
-                            {
-                                foundUriTemplates.Add(href);
-                            }
-                        }
-                        if (!foundUriTemplates.Any())
-                        {
-                            foundUriTemplates.Add(orDefaultUriTemplate);
+                            effectiveRealm = candidateSystemIds.FirstOrDefault();
+                            Console.WriteLine($"'{resourceName}' was not available on realm {realm}. Falling back to {effectiveRealm}.");
                         }
 
+                        string href = resourceToken.SelectToken($"..systems[?(@.systemID == '{effectiveRealm}')]").Parent.Parent.Parent["href"].ToString();
+                        return href;
                     }
                     else
                     {
-                        string href = resourceToken["href"].ToString();
-                        if (serviceTypes.Any(it => href.Contains(it)))
-                        {
-                            foundUriTemplates.Add(href);
-                        }
-                        else
-                        {
-                            foundUriTemplates.Add(orDefaultUriTemplate);
-                        }
-
-                    }
-
-                }
-                else {
-                    if (!foundUriTemplates.Any())
-                    {
-                        foundUriTemplates.Add(orDefaultUriTemplate);
+                        return orDefaultUriTemplate;                        
                     }
                 }
-
             }
-            return foundUriTemplates;
-               
-        }
 
+            return null;               
+        }
     }
 }

@@ -20,17 +20,18 @@ namespace QueryServiceRegistry
     {
         public static void Main(string[] args)
         {
-            if (3 != args.Length)
+            if (4 != args.Length)
             {
-                Console.WriteLine("Usage: {0} <apidomain> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine("Usage: {0} <apidomain> <oauth2token> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
             }
             else
             {
                 string apiDomain = args[0];
-                string username = args[1];
-                string password = args[2];
+                string oAuth2Token = args[1];
+                string username = args[2];
+                string password = args[3];
 
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oAuth2Token, username, password);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)

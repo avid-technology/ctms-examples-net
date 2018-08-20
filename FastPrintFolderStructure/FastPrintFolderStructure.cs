@@ -115,18 +115,19 @@ namespace FastPrintFolderStructure
         public static void Main(string[] args)
         {
             int serviceVersion;
-            if (6 != args.Length || !int.TryParse(args[2], out serviceVersion))
+            if (7 != args.Length || !int.TryParse(args[2], out serviceVersion))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <serviceversion> <realm> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <serviceversion> <realm> <oauth2token> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
             }
             else
             {
                 string apiDomain = args[0];
                 string serviceType = args[1];                
                 string realm = args[3];
-                string username = args[4];
-                string password = args[5];
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
+                string oauth2token = args[4];
+                string username = args[5];
+                string password = args[6];
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
@@ -134,10 +135,10 @@ namespace FastPrintFolderStructure
                     try
                     {
                         var registryServiceVersion = "0";
-                        string defaultLocationsUriTemplate = String.Format("https://{0}/apis/{1};version={2};realm={3}/locations", apiDomain, serviceType, 0, realm);
-                        List<String> locationsUriTemplates = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, new List<string> { serviceType }, registryServiceVersion, "loc:locations", defaultLocationsUriTemplate);
+                        string defaultLocationsUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/locations", apiDomain, serviceType, 0, realm);
+                        string locationsUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "loc:locations", defaultLocationsUriTemplate, realm);
 
-                        Uri locationsURL = new Uri(locationsUriTemplates[0]);
+                        Uri locationsURL = new Uri(locationsUriTemplate);
 
                         httpClient.DefaultRequestHeaders.Remove("Accept");
                         httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");

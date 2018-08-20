@@ -11,6 +11,7 @@ using System.Net.Http;
 using System.Text;
 using System.Web;
 using System.Collections.Generic;
+using Tavis.UriTemplates;
 
 namespace SimpleSearchAsync
 {
@@ -20,7 +21,6 @@ namespace SimpleSearchAsync
     /// </summary>
     public class SimpleSearchAsync
     {
-
         private static async Task<string> Stringify(IList<JToken> pages, string rawSearchExpression)
         {
             int assetNo = 0;
@@ -35,13 +35,13 @@ namespace SimpleSearchAsync
                         .AsEnumerable<dynamic>();
                 if (results.Any())
                 {
-                    sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, rawSearchExpression));
+                    sb.AppendLine($"Page#: {++pageNo}, search expression: '{rawSearchExpression}'");
                     foreach (var item in results)
                     {
                         string id = item["base"].id.ToString();
                         string name = item["common"].name.ToString();
 
-                        sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                        sb.AppendLine($"Asset#: {++assetNo}, id: {id}, name: '{name}'");
                     }
                 }
             }
@@ -57,75 +57,59 @@ namespace SimpleSearchAsync
             httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
 
             /// Check, whether simple search is supported:
-            Uri searchesResourceUrl = new Uri(string.Format("https://{0}/apis/{1};version=0;realm={2}/searches", apiDomain, serviceType, realm));
-            HttpResponseMessage searchesResponse = await httpClient.GetAsync(searchesResourceUrl);
-            HttpStatusCode searchesStatus = searchesResponse.StatusCode;
-            if (HttpStatusCode.OK == searchesStatus)
+            var registryServiceVersion = "0";
+            string defaultSimpleSearchUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/searches/simple?search={{search}}{{&offset,limit,sort}}", apiDomain, serviceType, 0, realm);
+            string simpleSearchUriTemplate = await PlatformTools.PlatformToolsAsync.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "search:simple-search", defaultSimpleSearchUriTemplate, realm);
+
+            UriTemplate simpleSearchUrlTemplate = new UriTemplate(simpleSearchUriTemplate);
+            simpleSearchUrlTemplate.SetParameter("search", rawSearchExpression);
+            Uri simpleSearchResultPageUrl = new Uri(simpleSearchUrlTemplate.Resolve());
+
+            httpClient.DefaultRequestHeaders.Remove("Accept");
+            httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
+
+            // Page through the result:
+            do
             {
-                string rawSearchesResult = await searchesResponse.Content.ReadAsStringAsync();
-                JObject searchesResult = JObject.Parse(rawSearchesResult);
-                JToken simpleSearchLinkObject = searchesResult.SelectToken("_links.search:simple-search");
-                // Is simple search supported?
-                if (null != simpleSearchLinkObject)
+                using (HttpResponseMessage simpleSearchResultPage = await httpClient.GetAsync(simpleSearchResultPageUrl))
                 {
-                    /// Doing the simple search and write the results to stdout:
-                    // Here, no URL-template library is used in favor to string surgery:
-                    string urlUnTemplatedSearch = simpleSearchLinkObject["href"].ToString();
-                    urlUnTemplatedSearch = urlUnTemplatedSearch.Substring(0, urlUnTemplatedSearch.LastIndexOf('=') + 1);
-                    string searchExpression = HttpUtility.UrlEncode(rawSearchExpression);
-                    Uri simpleSearchResultPageUrl = new Uri(urlUnTemplatedSearch + searchExpression);
-
-                    // Page through the result:
-                    do
+                    HttpStatusCode simpleSearchStatus = simpleSearchResultPage.StatusCode;
+                    if (HttpStatusCode.OK == simpleSearchStatus)
                     {
-                        HttpResponseMessage simpleSearchResultPage = await httpClient.GetAsync(simpleSearchResultPageUrl);
+                        string rawSearchResult = await simpleSearchResultPage.Content.ReadAsStringAsync();
+                        JObject searchResult = JObject.Parse(rawSearchResult);
+                        var embeddedResults = searchResult.Properties().FirstOrDefault(it => "_embedded".Equals(it.Name));
 
-                        HttpStatusCode simpleSearchStatus = simpleSearchResultPage.StatusCode;
-                        if (HttpStatusCode.OK == simpleSearchStatus)
+                        if (null != embeddedResults)
                         {
-                            string rawSearchResult = await simpleSearchResultPage.Content.ReadAsStringAsync();
-                            JObject searchResult = JObject.Parse(rawSearchResult);
-                            var embeddedResults = searchResult.Properties().FirstOrDefault(it => "_embedded".Equals(it.Name));
-
-                            if (null != embeddedResults)
-                            {
-                                pages.Add(embeddedResults);
-                            }
-                            else
-                            {
-                                Console.WriteLine("No results found for search expression '{0}'.", rawSearchExpression);
-                                return pages;
-                            }
-
-                            // If we have more results, follow the next link and get the next page:
-                            dynamic linkToNextPage = searchResult.SelectToken("_links.next");
-                            simpleSearchResultPageUrl
-                                = null != linkToNextPage
-                                    ? new Uri(linkToNextPage.href.ToString())
-                                    : null;
+                            pages.Add(embeddedResults);
                         }
                         else
                         {
-                            Console.WriteLine("Search failed for search expression '{0}'.", rawSearchExpression);
+                            Console.WriteLine($"No results found for search expression '{rawSearchExpression}'.");
                             return pages;
                         }
+
+                        // If we have more results, follow the next link and get the next page:
+                        dynamic linkToNextPage = searchResult.SelectToken("_links.next");
+                        simpleSearchResultPageUrl
+                            = null != linkToNextPage
+                                ? new Uri(linkToNextPage.href.ToString())
+                                : null;
                     }
-                    while (null != simpleSearchResultPageUrl);
-                }
-                else
-                {
-                    Console.WriteLine("Simple search not supported.");
+                    else
+                    {
+                        Console.WriteLine($"Search failed for search expression '{rawSearchExpression}'.");
+                        return pages;
+                    }
                 }
             }
-            else
-            {
-                Console.WriteLine("Request failed with code {0}.", searchesStatus);
-            }
+            while (null != simpleSearchResultPageUrl);
 
             return pages;
         }
 
-        public static async Task SimpleSearchAsyncImpl(string apiDomain, string serviceType, string realm, string username, string password, string searchExpression)
+        public static async Task SimpleSearchAsyncImpl(string apiDomain, string serviceType, string realm, string oauth2token, string username, string password, string searchExpression)
         {
             HttpClient httpClient;
             try
@@ -162,7 +146,7 @@ namespace SimpleSearchAsync
 
             try
             {
-                httpClient = await PlatformTools.PlatformToolsAsync.Authorize(httpClient, identityProvidersResponse, apiDomain, username, password);
+                httpClient = await PlatformTools.PlatformToolsAsync.Authorize(httpClient, identityProvidersResponse, apiDomain, oauth2token, username, password);
             }
             catch (Exception e)
             {
@@ -217,22 +201,23 @@ namespace SimpleSearchAsync
 
         public static void Main(string[] args)
         {
-            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
+            if (7 != args.Length || "'".Equals(args[6]) || !args[6].StartsWith("'") || !args[6].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'");
             }
             else
             {
                 string apiDomain = args[0];
                 string serviceType = args[1];
                 string realm = args[2];
-                string username = args[3];
-                string password = args[4];
-                string searchExpression = args[5].Trim('\'');
+                string oauth2token = args[3];
+                string username = args[4];
+                string password = args[5];
+                string searchExpression = args[6].Trim('\'');
 
                 try
                 {
-                    SimpleSearchAsyncImpl(apiDomain, serviceType, realm, username, password, searchExpression)
+                    SimpleSearchAsyncImpl(apiDomain, serviceType, realm, oauth2token, username, password, searchExpression)
                         .GetAwaiter()
                         .OnCompleted(() =>
                         {

@@ -1,7 +1,5 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -16,18 +14,19 @@ namespace QueryDatamodelAggregator
     {
         public static void Main(string[] args)
         {
-            if (4 != args.Length)
+            if (5 != args.Length)
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <serviceversion> <username> <password>");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <serviceversion> <oauth2token> <username> <password>");
             }
             else
             {
                 string apiDomain = args[0];
                 string serviceVersion = args[1];
-                string username = args[2];
-                string password = args[3];
+                string oauth2token = args[2];
+                string username = args[3];
+                string password = args[4];
 
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
@@ -35,15 +34,14 @@ namespace QueryDatamodelAggregator
                     try
                     {
                         const string dataModelAggregatorServiceType = "avid.ctms.datamodel.aggregator";
+                        const int dataModelAggregatorServiceVersion = 0;
 
                         // Specify an IETF BCP 47 language tag, such as "en-US":
                         const string lang = "en"; // "" represents the default language, which is "en"
 
-                        var registryServiceVersion = "0";
-                        string defaultSimpleSearchUriTemplate = String.Format("https://{0}/apis/{1};version={2}/aggregateddatamodel{{?lang}}", apiDomain, dataModelAggregatorServiceType, 0);
-                        List<String> aggregatedDataModelUriTemplates = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, new List<string> { dataModelAggregatorServiceType }, registryServiceVersion, "search:simple-search", defaultSimpleSearchUriTemplate);
+                        string aggregatedDataModelUriTemplate = $"https://{apiDomain}/apis/{dataModelAggregatorServiceType};version={dataModelAggregatorServiceVersion}/aggregateddatamodel{{?lang}}";
 
-                        UriTemplate aggregatedDataModeUriTemplate = new UriTemplate(aggregatedDataModelUriTemplates[0]);
+                        UriTemplate aggregatedDataModeUriTemplate = new UriTemplate(aggregatedDataModelUriTemplate);
                         aggregatedDataModeUriTemplate.SetParameter("lang", lang);
                         Uri aggregatedDataModelResourceURL = new Uri(aggregatedDataModeUriTemplate.Resolve());
 
@@ -51,8 +49,7 @@ namespace QueryDatamodelAggregator
                         httpClient.DefaultRequestHeaders.Remove("Accept");
                         httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
                         
-                        /// Check, whether the CTMS Datamodel Aggregator is available:
-                       
+                        /// Check, whether the CTMS Datamodel Aggregator is available:                       
                         HttpResponseMessage aggregatedDataModelResponse = httpClient.GetAsync(aggregatedDataModelResourceURL).Result;
                         HttpStatusCode aggregatedDataModelStatus = aggregatedDataModelResponse.StatusCode;
                         if (HttpStatusCode.OK == aggregatedDataModelStatus)

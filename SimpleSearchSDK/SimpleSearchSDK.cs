@@ -3,6 +3,7 @@
 //
 
 using Avid.Platform.SDK;
+using Avid.Platform.SDK.Authorization;
 using Avid.Platform.SDK.Hal;
 using Avid.Platform.SDK.Model.AssetAccess;
 using Avid.Platform.SDK.Model.Common;
@@ -10,6 +11,7 @@ using Avid.Platform.SDK.Model.Searching;
 using System;
 using System.Linq;
 using System.Text;
+using WebApi.Hal;
 
 namespace SimpleSearchSDK
 {
@@ -20,35 +22,41 @@ namespace SimpleSearchSDK
     {
         public static void Main(string[] args)
         {
-            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
+            if (7 != args.Length || "'".Equals(args[6]) || !args[6].StartsWith("'") || !args[6].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'");
             }
             else
             {             
                 string apiDomain = args[0];
                 string serviceType = args[1];
                 string realm = args[2];
-                string username = args[3];
-                string password = args[4];
-                string searchExpression = args[5].Trim('\'');
+                string oauth2token = args[3];
+                string username = args[4];
+                string password = args[5];
+                string rawSearchExpression = args[6].Trim('\'');
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
-                AssetAccessClient assetAccessClient
-                    = PlatformTools.PlatformToolsSDK.CreateAssetAccessClient(upstreamServerUrl, serviceType
-                        , realm
-                        , username
-                        , password);              
 
-                if (null != assetAccessClient)
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
                 {
-                    using (assetAccessClient)
+                    const string registeredLinkRelSearches = "search:searches";
+                    Searches searchesResource = PlatformTools.PlatformToolsSDK.FindInRegistry<Searches>(registryClient, serviceType, realm, registeredLinkRelSearches);
+
+                    if (null != searchesResource)
                     {
+                        const string registeredLinkRelSimpleSearch = "search:simple-search";
+                        Link simpleSearchLink = searchesResource.DiscoverLink(registeredLinkRelSimpleSearch);
                         /// Check, whether simple search is supported:
-                        if (assetAccessClient.SupportsSimpleSearch())
+                        if (null != simpleSearchLink)
                         {
+
+                            UriTemplate simpleSearchUrlTemplate = new UriTemplate(simpleSearchLink.Href);
+                            simpleSearchUrlTemplate.SetParameter("search", rawSearchExpression);
+                            Uri simpleSearchResultPageUrl = new Uri(simpleSearchUrlTemplate.Resolve());
+
                             /// Doing the search and write the results to stdout:
-                            SimpleSearch searchResult = assetAccessClient.SimpleSearch(searchExpression);
+                            SimpleSearch searchResult = registryClient.GetHalResource<SimpleSearch>(simpleSearchResultPageUrl);
 
                             int assetNo = 0;
                             int pageNo = 0;
@@ -58,7 +66,7 @@ namespace SimpleSearchSDK
                             {
                                 if (searchResult.AssetList.Any())
                                 {
-                                    sb.AppendLine($"Page#: {++pageNo}, search expression: '{searchExpression}'");
+                                    sb.AppendLine($"Page#: {++pageNo}, search expression: '{rawSearchExpression}'");
                                     foreach (Asset asset in searchResult.AssetList)
                                     {
                                         BaseInfo baseInfo = asset.Base;
@@ -69,21 +77,14 @@ namespace SimpleSearchSDK
                                 }
 
                                 // If we have more results, follow the next link and get the next page:
-                                searchResult = assetAccessClient.GetHalResource<SimpleSearch>(searchResult.GetUri("next", Enumerable.Empty<EmbedResource>()));
+                                searchResult = registryClient.GetHalResource<SimpleSearch>(searchResult.GetUri("next", Enumerable.Empty<EmbedResource>()));
                             }
                             while (searchResult != null);
                             Console.WriteLine(sb);
                         }
-                        else
-                        {
-                            Console.WriteLine("Simple search not supported.");
-                        }
-                    }                   
+                    }
                 }
-                else
-                {
-                    Console.WriteLine($"Couldn't create AssetAccessClient for serviceType: '{serviceType}', realm: '{realm}', username: '{username}', upstreamServerUrl: <{upstreamServerUrl}>");
-                }
+
                 Console.WriteLine("End");
             }            
         }

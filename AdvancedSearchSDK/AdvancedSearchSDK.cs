@@ -3,6 +3,7 @@
 //
 
 using Avid.Platform.SDK;
+using Avid.Platform.SDK.Authorization;
 using Avid.Platform.SDK.Hal;
 using Avid.Platform.SDK.Model.AssetAccess;
 using Avid.Platform.SDK.Model.Common;
@@ -11,8 +12,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using WebApi.Hal;
 
 namespace AdvancedSearchSDK
 {
@@ -20,72 +23,90 @@ namespace AdvancedSearchSDK
     {
         public static void Main(string[] args)
         {
-            if (6 != args.Length)
+            if (7 != args.Length)
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <username> <password> <advancedsearchdescriptionfilename>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> <advancedsearchdescriptionfilename>");
             }
             else
             {                
                 string apiDomain = args[0];
                 string serviceType = args[1];
                 string realm = args[2];
-                string username = args[3];
-                string password = args[4];
-                string advancedSearchDescriptionFileName = args[5];
+                string oauth2token = args[3];
+                string username = args[4];
+                string password = args[5];
+                string advancedSearchDescriptionFileName = args[6];
 
                 if (File.Exists(advancedSearchDescriptionFileName))
                 {
-                    Uri upstreamServerUrl = new Uri(string.Format("https://{0}", apiDomain));
-                    AssetAccessClient assetAccessClient
-                        = PlatformTools.PlatformToolsSDK.CreateAssetAccessClient(upstreamServerUrl, serviceType
-                            , realm
-                            , username
-                            , password);
+                    Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
 
-                    if (null != assetAccessClient)
+                    using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
                     {
-                        using (assetAccessClient)
+                        const string registeredLinkRelSearches = "search:searches";
+                        Searches searchesResource = PlatformTools.PlatformToolsSDK.FindInRegistry<Searches>(registryClient, serviceType, realm, registeredLinkRelSearches);
+
+                        if (null != searchesResource)
                         {
+                            const string registeredLinkRelAdvancedSearch = "search:advanced-search";
+                            Link advancedSearchLink = searchesResource.DiscoverLink(registeredLinkRelAdvancedSearch);
                             /// Check, whether simple search is supported:
-                            if (assetAccessClient.SupportsAdvancedSearch())
+                            if (null != advancedSearchLink)
                             {
+                                UriTemplate advancedSearchUriTemplate = new UriTemplate(advancedSearchLink.Href);
+                                advancedSearchUriTemplate.SetParameter("offset", 0);
+                                advancedSearchUriTemplate.SetParameter("limit", 50);
+
+                                string advancedSearchUri = advancedSearchUriTemplate.Resolve();
+
                                 string advancedSearchDescription = File.ReadAllText(advancedSearchDescriptionFileName);
 
                                 /// Doing the search and write the results to stdout:
-                                AdvancedSearch searchResult = assetAccessClient.AdvancedSearch(advancedSearchDescription);
-
-                                int assetNo = 0;
-                                int pageNo = 0;
-                                // Page through the result:
-                                StringBuilder sb = new StringBuilder();
-                                do
+                                // The search description must be passed as content type "application/json":
+                                using (HttpContent content = new StringContent(advancedSearchDescription, Encoding.UTF8, "application/json"))
                                 {
-                                    if (searchResult.AssetList.Any())
+                                    using (HttpResponseMessage response = registryClient.HttpClient.PostAsync(advancedSearchUri, content).Result)
                                     {
-                                        sb.AppendLine(string.Format("Page#: {0}, search description from file '{1}'", ++pageNo, advancedSearchDescriptionFileName));
-                                        foreach (Asset asset in searchResult.AssetList)
+                                        AdvancedSearch searchResult = response.Content.ReadAsAsyncHal<AdvancedSearch>().Result;
+
+                                        int assetNo = 0;
+                                        int pageNo = 0;
+                                        // Page through the result:
+                                        StringBuilder sb = new StringBuilder();
+                                        do
                                         {
-                                            BaseInfo baseInfo = asset.Base;
-                                            CommonAttributes commonAttributes = asset.Common;
+                                            if (searchResult.AssetList.Any())
+                                            {
+                                                sb.AppendLine($"Page#: {++pageNo}, search description from file '{advancedSearchDescriptionFileName}'");
+                                                foreach (Asset asset in searchResult.AssetList)
+                                                {
+                                                    BaseInfo baseInfo = asset.Base;
+                                                    CommonAttributes commonAttributes = asset.Common;
 
-                                            sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, asset.Base.Id, asset.Common.Name));
+                                                    sb.AppendLine($"Asset#: {++assetNo}, id: {asset.Base.Id}, name: '{asset.Common.Name}'");
+                                                }
+                                            }
+
+                                            // If we have more results, follow the next link and get the next page:
+                                            searchResult = registryClient.GetHalResource<SimpleSearch>(searchResult.GetUri("next", Enumerable.Empty<EmbedResource>()));
                                         }
+                                        while (searchResult != null);
+                                        Console.WriteLine(sb);
                                     }
-
-                                    // If we have more results, follow the next link and get the next page:
-                                    searchResult = assetAccessClient.GetHalResource<SimpleSearch>(searchResult.GetUri("next", Enumerable.Empty<EmbedResource>()));
                                 }
-                                while (searchResult != null);
-                                Console.WriteLine(sb);
+                            }
+                            else
+                            {
+                                Console.WriteLine("Advanced search not supported.");
                             }
                         }
+                        else
+                        {
+                            Console.WriteLine("Advanced search not supported.");
+                        }
+
+                        Console.WriteLine("End");
                     }
-                    else
-                    {
-                        Console.WriteLine("Couldn't create AssetAccessClient for serviceType: '{0}', realm: '{1}', username: '{2}', upstreamServerUrl: <{3}>"
-                            , serviceType, realm, username, upstreamServerUrl);
-                    }
-                    Console.WriteLine("End");
                 }
             }
         }

@@ -22,114 +22,118 @@ namespace SimpleSearch
     {
         public static void Main(string[] args)
         {
-            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
+            if (7 != args.Length || "'".Equals(args[6]) || !args[6].StartsWith("'") || !args[6].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
             }
             else
             {
                 string apiDomain = args[0];
                 string serviceType = args[1];
                 string realm = args[2];
-                string username = args[3];
-                string password = args[4];
-                string rawSearchExpression = args[5].Trim('\'');
+                string oauth2token = args[3];
+                string username = args[4];
+                string password = args[5];
+                string rawSearchExpression = args[6].Trim('\'');
 
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
-
-                bool successfullyAuthorized = null != httpClient;
-                if (successfullyAuthorized)
+                using (HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password))
                 {
-                    try
+                    bool successfullyAuthorized = null != httpClient;
+                    if (successfullyAuthorized)
                     {
-                        var registryServiceVersion = "0";
-                        string defaultSimpleSearchUriTemplate = String.Format("https://{0}/apis/{1};version={2};realm={3}/searches/simple?search={{search}}{{&offset,limit,sort}}", apiDomain, serviceType, 0, realm);
-                        List<String> simpleSearchUriTemplates = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, new List<string> { serviceType }, registryServiceVersion, "search:simple-search", defaultSimpleSearchUriTemplate);
-
-                        UriTemplate simpleSearchUrlTemplate = new UriTemplate(simpleSearchUriTemplates[0]);
-                        simpleSearchUrlTemplate.SetParameter("search", rawSearchExpression);
-                        Uri simpleSearchResultPageUrl = new Uri(simpleSearchUrlTemplate.Resolve());
-
-                        httpClient.DefaultRequestHeaders.Remove("Accept");
-                        httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
-
-                        /// Check, whether simple search is supported:
-                        HttpResponseMessage searchesResponse = httpClient.GetAsync(simpleSearchResultPageUrl).Result;
-                        HttpStatusCode searchesStatus = searchesResponse.StatusCode;
-                        if (HttpStatusCode.OK == searchesStatus)
+                        try
                         {
-                            string rawSearchesResult = searchesResponse.Content.ReadAsStringAsync().Result;
-                            JObject searchesResult = JObject.Parse(rawSearchesResult);
-                            
-                            int assetNo = 0;
-                            int pageNo = 0;
-                            // Page through the result:
-                            StringBuilder sb = new StringBuilder();
-                            do
+                            var registryServiceVersion = "0";
+                            string defaultSimpleSearchUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/searches/simple?search={{search}}{{&offset,limit,sort}}", apiDomain, serviceType, 0, realm);
+                            string simpleSearchUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "search:simple-search", defaultSimpleSearchUriTemplate, realm);
+
+                            UriTemplate simpleSearchUrlTemplate = new UriTemplate(simpleSearchUriTemplate);
+                            simpleSearchUrlTemplate.SetParameter("search", rawSearchExpression);
+                            Uri simpleSearchResultPageUrl = new Uri(simpleSearchUrlTemplate.Resolve());
+
+                            httpClient.DefaultRequestHeaders.Remove("Accept");
+                            httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
+
+                            using (HttpResponseMessage searchesResponse = httpClient.GetAsync(simpleSearchResultPageUrl).Result)
                             {
-                                HttpResponseMessage simpleSearchResultPage = httpClient.GetAsync(simpleSearchResultPageUrl).Result;
-
-                                HttpStatusCode simpleSearchStatus = simpleSearchResultPage.StatusCode;
-                                if (HttpStatusCode.OK == simpleSearchStatus)
+                                /// Check, whether simple search is supported:
+                                HttpStatusCode searchesStatus = searchesResponse.StatusCode;
+                                if (HttpStatusCode.OK == searchesStatus)
                                 {
-                                    string rawSearchResult = simpleSearchResultPage.Content.ReadAsStringAsync().Result;
-                                    JObject searchResult = JObject.Parse(rawSearchResult);
+                                    string rawSearchesResult = searchesResponse.Content.ReadAsStringAsync().Result;
+                                    JObject searchesResult = JObject.Parse(rawSearchesResult);
 
-                                    var embeddedResults = searchResult.Properties().FirstOrDefault(it => "_embedded".Equals(it.Name));
-
-                                    if (null != embeddedResults)
+                                    int assetNo = 0;
+                                    int pageNo = 0;
+                                    // Page through the result:
+                                    StringBuilder sb = new StringBuilder();
+                                    do
                                     {
-                                        var results
-                                            = embeddedResults
-                                                .SelectToken("..aa:asset")
-                                                .AsEnumerable<dynamic>();
-                                        if (results.Any())
+                                        using (HttpResponseMessage simpleSearchResultPage = httpClient.GetAsync(simpleSearchResultPageUrl).Result)
                                         {
-                                            sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, rawSearchExpression));
-                                            foreach (var item in results)
+                                            HttpStatusCode simpleSearchStatus = simpleSearchResultPage.StatusCode;
+                                            if (HttpStatusCode.OK == simpleSearchStatus)
                                             {
-                                                string id = item["base"].id.ToString();
-                                                string name = item["common"].name?.ToString();
+                                                string rawSearchResult = simpleSearchResultPage.Content.ReadAsStringAsync().Result;
+                                                JObject searchResult = JObject.Parse(rawSearchResult);
 
-                                                sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                                                var embeddedResults = searchResult.Properties().FirstOrDefault(it => "_embedded".Equals(it.Name));
+
+                                                if (null != embeddedResults)
+                                                {
+                                                    var results
+                                                        = embeddedResults
+                                                            .SelectToken("..aa:asset")
+                                                            .AsEnumerable<dynamic>();
+                                                    if (results.Any())
+                                                    {
+                                                        sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, rawSearchExpression));
+                                                        foreach (var item in results)
+                                                        {
+                                                            string id = item["base"].id.ToString();
+                                                            string name = item["common"].name?.ToString();
+
+                                                            sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                                                        }
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    Console.WriteLine("No results found for search expression '{0}'.", rawSearchExpression);
+                                                }
+
+                                                // If we have more results, follow the next link and get the next page:
+                                                dynamic linkToNextPage = searchResult.SelectToken("_links.next");
+                                                simpleSearchResultPageUrl
+                                                    = null != linkToNextPage
+                                                        ? new Uri(linkToNextPage.href.ToString())
+                                                        : null;
+                                            }
+                                            else
+                                            {
+                                                simpleSearchResultPageUrl = null;
+                                                Console.WriteLine("Search failed for search expression '{0}'.", rawSearchExpression);
                                             }
                                         }
                                     }
-                                    else
-                                    {
-                                        Console.WriteLine("No results found for search expression '{0}'.", rawSearchExpression);
-                                    }
-
-                                    // If we have more results, follow the next link and get the next page:
-                                    dynamic linkToNextPage = searchResult.SelectToken("_links.next");
-                                    simpleSearchResultPageUrl
-                                        = null != linkToNextPage
-                                            ? new Uri(linkToNextPage.href.ToString())
-                                            : null;
+                                    while (null != simpleSearchResultPageUrl);
+                                    Console.WriteLine(sb);
                                 }
                                 else
                                 {
-                                    simpleSearchResultPageUrl = null;
-                                    Console.WriteLine("Search failed for search expression '{0}'.", rawSearchExpression);
+                                    Console.WriteLine("Simple search not supported.");
                                 }
                             }
-                            while (null != simpleSearchResultPageUrl);
-                            Console.WriteLine(sb);
                         }
-                        else
+                        finally
                         {
-                            Console.WriteLine("Simple search not supported.");
+                            PlatformTools.PlatformTools.Logout(httpClient);
                         }
-                        
                     }
-                    finally
+                    else
                     {
-                        PlatformTools.PlatformTools.Logout(httpClient);
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("Authorization failed.");
+                        Console.WriteLine("Authorization failed.");
+                    } 
                 }
 
                 Console.WriteLine("End");

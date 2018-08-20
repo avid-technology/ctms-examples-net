@@ -34,8 +34,8 @@
     <StartupObject />
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Newtonsoft.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\packages\Newtonsoft.Json.10.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
+    <Reference Include="Newtonsoft.Json, Version=11.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.11.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="PlatformSDK">
       <HintPath>..\lib\PlatformSDK.dll</HintPath>
@@ -55,7 +55,7 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
     <Reference Include="Tavis.UriTemplates, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Tavis.UriTemplates.1.1.0\lib\Net45\Tavis.UriTemplates.dll</HintPath>
+      <HintPath>..\packages\Tavis.UriTemplates.1.1.1\lib\Net45\Tavis.UriTemplates.dll</HintPath>
     </Reference>
     <Reference Include="WebApi.Hal, Version=2.6.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\WebApi.Hal.2.6.0\lib\net45\WebApi.Hal.dll</HintPath>

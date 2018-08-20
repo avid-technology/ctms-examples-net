@@ -12,6 +12,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using WebApi.Hal;
+using System.Net.Http;
 
 namespace OrchestrationProcessQuerySDK
 {
@@ -22,47 +24,74 @@ namespace OrchestrationProcessQuerySDK
     {        
         public static void Main(string[] args)
         {
-            if (5 != args.Length || "'".Equals(args[4]) || !args[4].StartsWith("'") || !args[4].EndsWith("'"))
+            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <realm> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'");
             }
             else
             {
                 string apiDomain = args[0];
                 string realm = args[1];
-                string username = args[2];
-                string password = args[3];
-                string rawSearchExpression = args[4].Trim('\'');
+                string oauth2token = args[2];
+                string username = args[3];
+                string password = args[4];
+                string rawSearchExpression = args[5].Trim('\'');
 
-                Uri upstreamServerUrl = new Uri(string.Format("https://{0}", apiDomain));
+                Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
 
-                using (OrchestrationClient orchestrationClient = new OrchestrationClient(new MCUXAuthorizationConnection(upstreamServerUrl, username, password), realm))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
                 {
-                    /// Create the process query:
-                    string queryExpression = "<query version='1.0'><search><quick>"+rawSearchExpression+"</quick></search></query>";
-                    JObject query = new JObject(new JProperty("query", queryExpression));
-                    ProcessQuery result = orchestrationClient.CreateProcessQuery(query);
+                    const string registeredLinkRelOrchestrationRoot = "orchestration:orchestration";
+                    const string orchestrationServiceType = "avid.orchestration.ctc";
+                    OrchestrationRoot orchestrationRootResource = PlatformTools.PlatformToolsSDK.FindInRegistry<OrchestrationRoot>(registryClient, orchestrationServiceType, realm, registeredLinkRelOrchestrationRoot);
 
-                    int assetNo = 0;
-                    int pageNo = 0;
-                    /// Page through the result:
-                    StringBuilder sb = new StringBuilder();
-                    do
+                    if (null != orchestrationRootResource)
                     {
-                        sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, rawSearchExpression));
-                        foreach (Process processInstance in result.ResourceList)
+                        const string registeredLinkRelOrchestrationProcessQuery = "orchestration:process-query";
+                        Link orchestrationProcessQueryLink = orchestrationRootResource.DiscoverLink(registeredLinkRelOrchestrationProcessQuery);
+                        if (null != orchestrationProcessQueryLink)
                         {
-                            string id = processInstance.Base.Id;
-                            string name = processInstance.Common.Name;
+                            UriTemplate orchestrationProcessQueryUriTemplate = new UriTemplate(orchestrationProcessQueryLink.Href);
+                            orchestrationProcessQueryUriTemplate.SetParameter("offset", 0);
+                            orchestrationProcessQueryUriTemplate.SetParameter("limit", 50);
 
-                            sb.AppendLine(string.Format("ProcessItem#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                            string orchestrationProcessQueryUri = orchestrationProcessQueryUriTemplate.Resolve();
+
+                            /// Create the process query:
+                            string queryExpression = "<query version='1.0'><search><quick>" + rawSearchExpression + "</quick></search></query>";
+                            JObject query = new JObject(new JProperty("query", queryExpression));
+                            ProcessQuery result = registryClient.SendHal<ProcessQuery>(HttpMethod.Post, new Uri(orchestrationProcessQueryUri), query);
+
+                            int assetNo = 0;
+                            int pageNo = 0;
+                            /// Page through the result:
+                            StringBuilder sb = new StringBuilder();
+                            do
+                            {
+                                sb.AppendLine($"Page#: {++pageNo}, search expression: '{rawSearchExpression}'");
+                                foreach (Process processInstance in result.ResourceList)
+                                {
+                                    string id = processInstance.Base.Id;
+                                    string name = processInstance.Common.Name;
+
+                                    sb.AppendLine($"ProcessItem#: {++assetNo}, id: {id}, name: '{name}'");
+                                }
+
+                                // If we have more results, follow the next link and get the next page:
+                                result = registryClient.GetHalResource<ProcessQuery>(result.GetUri("next", Enumerable.Empty<EmbedResource>()));
+                            }
+                            while (result != null);
+                            Console.WriteLine(sb);  
                         }
-
-                        // If we have more results, follow the next link and get the next page:
-                        result = orchestrationClient.GetHalResource<ProcessQuery>(result.GetUri("next", Enumerable.Empty<EmbedResource>()));
+                        else
+                        {
+                            Console.WriteLine("ProcessQuery not supported.");
+                        }
                     }
-                    while (result != null);
-                    Console.WriteLine(sb);
+                    else
+                    {
+                        Console.WriteLine("Orchestration not supported.");
+                    }
                 }                                
                 Console.WriteLine("End");
             }

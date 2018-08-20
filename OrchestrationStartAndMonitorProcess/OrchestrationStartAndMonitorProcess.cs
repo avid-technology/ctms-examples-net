@@ -21,18 +21,19 @@ namespace OrchestrationStartAndMonitorProcess
     {
         public static void Main(string[] args)
         {
-            if (4 != args.Length)
+            if (5 != args.Length)
             {
-                Console.WriteLine("Usage: {0} <apidomain> <realm> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <realm> <oauth2token> <username> <password>");
             }
             else
             {
                 string apiDomain = args[0];
                 string realm = args[1];
-                string username = args[2];
-                string password = args[3];
+                string oauth2token = args[2];
+                string username = args[3];
+                string password = args[4];
 
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, username, password);
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
@@ -42,10 +43,10 @@ namespace OrchestrationStartAndMonitorProcess
                         const string orchestrationServiceType = "avid.orchestration.ctc";
 
                         var registryServiceVersion = "0";
-                        string defaultProcessUriTemplate = String.Format("https://{0}/apis/{1};version={2};realm={3}/processes/{{id}}", apiDomain, orchestrationServiceType, 0, realm);
-                        List<String> processUriTemplates = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, new List<string> { orchestrationServiceType }, registryServiceVersion, "orchestration:process", defaultProcessUriTemplate);
+                        string defaultProcessUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/processes/{{id}}", apiDomain, orchestrationServiceType, 0, realm);
+                        string processUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, orchestrationServiceType, registryServiceVersion, "orchestration:process", defaultProcessUriTemplate, realm);
 
-                        UriTemplate startProcessTemplate = new UriTemplate(processUriTemplates[0]);
+                        UriTemplate startProcessTemplate = new UriTemplate(processUriTemplate);
                         Uri startProcessURL = new Uri(startProcessTemplate.Resolve());
 
 

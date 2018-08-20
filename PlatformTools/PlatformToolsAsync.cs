@@ -4,6 +4,8 @@
 
 using Newtonsoft.Json.Linq;
 using System;
+using System.Linq;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -40,7 +42,8 @@ namespace PlatformTools
                 // Establish tolerant certificate check:
                 ServerCertificateValidationCallback = delegate { return true; },
                 UnsafeAuthenticatedConnectionSharing = true,
-                AllowAutoRedirect = false
+                AllowAutoRedirect = false,
+                UseCookies = false
             };
 
             HttpClient httpClient = new HttpClient(webRequesthandler);
@@ -49,12 +52,13 @@ namespace PlatformTools
 
             /// Authorization procedure:
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+
             return httpClient;
         }
 
         public static async Task<JObject> GetAuthEndpoint(HttpClient httpClient, string apiDomain)
         {
-            string rawAuthResult = await httpClient.GetStringAsync(string.Format("https://{0}/auth", apiDomain));
+            string rawAuthResult = await httpClient.GetStringAsync($"https://{apiDomain}/auth");
 
             return JObject.Parse(rawAuthResult);
         }
@@ -68,28 +72,32 @@ namespace PlatformTools
             return JObject.Parse(rawIdentityProvidersResult);
         }
 
-        public static async Task<HttpClient> Authorize(HttpClient httpClient, JObject response, string apiDomain, string username, string password)
+        public static async Task<HttpClient> Authorize(HttpClient httpClient, JObject response, string apiDomain, string OAuth2Token, string username, string password)
         {
-            // Select MC|UX identity provider and retrieve login URL:
+            // Select OAuth2 identity provider and retrieve login URL:
             dynamic dynamicResponseHandle = response;
-            dynamic mcuxLoginHrefObject = dynamicResponseHandle.SelectToken("$._embedded.auth:identity-provider[?(@.kind == 'mcux')]._links.auth-mcux:login[0].href");
+            dynamic oAuthLoginHrefObject = dynamicResponseHandle.SelectToken("$._embedded.auth:identity-provider[?(@.kind == 'oauth')]._links.auth:ropc-default[0].href");
 
-            if (null == mcuxLoginHrefObject)
+            if (null == oAuthLoginHrefObject)
             {
-                throw new Exception("MCUX authentication not supported");
+                throw new Exception("OAuth2 authentication not supported");
             }
 
-            string urlLogin = mcuxLoginHrefObject.ToString();
+            string OAuth2EndPoint = oAuthLoginHrefObject.ToString();
             // Do the login:
-            JObject loginContent
-                = new JObject(
-                    new JProperty("username", username),
-                    new JProperty("password", password)
-                );
-            using (HttpContent content = new ObjectContent<JObject>(loginContent, new System.Net.Http.Formatting.JsonMediaTypeFormatter()))
+            IDictionary<string, string> loginArguments = new Dictionary<string, string>(3)
             {
-                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, urlLogin) { Content = content })
+                { "username", username },
+                { "password", password },
+                { "grant_type", "password" },
+            };
+
+            using (HttpContent content = new FormUrlEncodedContent(loginArguments))
+            {
+                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, OAuth2EndPoint) { Content = content })
                 {
+                    request.Headers.Add("Authorization", "Basic " + OAuth2Token);
+
                     using (HttpResponseMessage result = await httpClient.SendAsync(request))
                     {
                         if (HttpStatusCode.RedirectMethod == result.StatusCode || result.IsSuccessStatusCode)
@@ -100,11 +108,18 @@ namespace PlatformTools
                                 // Establish tolerant certificate check:
                                 ServerCertificateValidationCallback = delegate { return true; },
                                 UnsafeAuthenticatedConnectionSharing = true,
-                                AllowAutoRedirect = false
+                                AllowAutoRedirect = false,
+                                UseCookies = false
                             };
+
+                            string rawAuthorizationData = result.Content.ReadAsStringAsync().Result;
+                            dynamic authorizationData = JObject.Parse(rawAuthorizationData);
+                            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+
                             HttpClient httpKeepAliveClient = new HttpClient(webRequesthandler);
+                            httpKeepAliveClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
                             httpKeepAliveClient.Timeout = DefaultRequestTimeout;
-                            httpKeepAliveClient.BaseAddress = new UriBuilder("https", apiDomain).Uri;
+                            httpKeepAliveClient.BaseAddress = new Uri($"http://{apiDomain}");
                             httpKeepAliveClient.DefaultRequestHeaders.Add("Accept", "application/json");
                             tokenSource = new CancellationTokenSource();
                             Task sessionRefresher
@@ -166,111 +181,26 @@ namespace PlatformTools
             }
         }
 
-
-
-        /// <summary>
-        /// MCUX-identity-provider based authorization via credentials and cookies.
-        /// The used server-certificate validation is tolerant. Creates an authorized HttpClient instance,
-        /// following the MCUX-identity-provider authorization strategy.
-        /// The resulting HttpClient instance refers a set of cookies, which are required for the communication
-        /// with the platform. - Just use this HttpClient instance for future calls against the platform.
-        /// </summary>
-        /// <param name="apiDomain">address to get "auth"</param>
-        /// <param name="username">MCUX login</param>
-        /// <param name="password">MCUX password</param>
-        /// <returns>An authorized HttpClient instance, or null if something went wrong, esp. authorization went wrong.</returns>
-        public static async Task<HttpClient> AuthorizeAsync(string apiDomain, string username, string password)
-        {
-            WebRequestHandler webRequesthandler = new WebRequestHandler
-            {
-                CookieContainer = new CookieContainer(),
-                // Establish tolerant certificate check:
-                ServerCertificateValidationCallback = delegate { return true; },
-                UnsafeAuthenticatedConnectionSharing = true,
-                AllowAutoRedirect = false
-            };
-
-            HttpClient httpClient = new HttpClient(webRequesthandler);
-            httpClient.Timeout = DefaultRequestTimeout;
-            httpClient.BaseAddress = new UriBuilder("https", apiDomain).Uri;
-
-            /// Authorization procedure:
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
-
-            // Get identity providers:
-            string rawAuthResult = await httpClient.GetStringAsync(string.Format("https://{0}/auth", apiDomain));
-
-            dynamic authResult = JObject.Parse(rawAuthResult);
-            string urlIdentityProviders = authResult.SelectToken("$._links.auth:identity-providers[0].href");
-
-            // Select MC|UX identity provider and retrieve login URL:
-            string rawIdentityProvidersResult = await httpClient.GetStringAsync(urlIdentityProviders);
-            dynamic identityProvidersResult = JObject.Parse(rawIdentityProvidersResult);
-            dynamic mcuxLoginHrefObject = identityProvidersResult.SelectToken("$._embedded.auth:identity-provider[?(@.kind == 'mcux')]._links.auth-mcux:login[0].href");
-
-            if (null == mcuxLoginHrefObject)
-            {
-                // MCUX authentication not supported
-                return null;
-            }
-
-            string urlLogin = mcuxLoginHrefObject.ToString();
-            // Do the login:
-            JObject loginContent
-                = new JObject(
-                    new JProperty("username", username),
-                    new JProperty("password", password)
-                );
-            using (HttpContent content = new ObjectContent<JObject>(loginContent, new System.Net.Http.Formatting.JsonMediaTypeFormatter()))
-            {
-                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, urlLogin) { Content = content })
-                {
-                    using (HttpResponseMessage result = await httpClient.SendAsync(request))
-                    {
-                        if (HttpStatusCode.RedirectMethod == result.StatusCode || result.IsSuccessStatusCode)
-                        {
-                            HttpClient httpKeepAliveClient = new HttpClient(webRequesthandler);
-                            httpKeepAliveClient.Timeout = DefaultRequestTimeout;
-                            httpKeepAliveClient.BaseAddress = new UriBuilder("https", apiDomain).Uri;
-                            httpKeepAliveClient.DefaultRequestHeaders.Add("Accept", "application/json");
-                            tokenSource = new CancellationTokenSource();
-                            Task sessionRefresher
-                                = Task.Factory.StartNew(
-                                    async ignored =>
-                                    {
-                                        while (!tokenSource.Token.IsCancellationRequested)
-                                        {
-                                            await Task.Delay(120000, tokenSource.Token);
-                                            tokenSource.Token.ThrowIfCancellationRequested();
-
-                                            SessionKeepAlive(httpKeepAliveClient);
-                                        }
-                                    }
-                                    , null
-                                    , tokenSource.Token
-                                    , TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning
-                                    , TaskScheduler.Default);
-                        }
-                        else 
-                        {
-                            return null;
-                        }
-                    }
-                }
-            }
-
-            return httpClient;
-        }
-
         /// <summary>
         /// Signals the platform, that our session is still in use.
         /// </summary>
         /// <param name="httpClient">The HttpClient against the platform.</param>
         public static async void SessionKeepAlive(HttpClient httpClient) 
         {
-            // TODO: this is a workaround, see {CORE-7359}. In future the access token prolongation API should be used.
-            string urlPing = string.Format("https://{0}/api/middleware/service/ping", httpClient.BaseAddress.Host);
-            HttpResponseMessage httpResponseMessage = await httpClient.GetAsync(urlPing);
+            string urlExtend = $"https://{httpClient.BaseAddress.Host}/auth/tokens/current/extension";
+            try
+            {
+                using (HttpContent refreshRequestContent = new StringContent(string.Empty))
+                {
+                    using (HttpResponseMessage httpResponseMessage = httpClient.PostAsync(urlExtend, refreshRequestContent).Result)
+                    {
+                    }
+                }
+            }
+            catch
+            {
+                // Nothing. Usually those exceptions can be ignored.
+            }
         }
 
         /// <summary>
@@ -283,7 +213,8 @@ namespace PlatformTools
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
 
             /// Logout from platform:
-            string rawAuthResult = await httpClient.GetStringAsync(string.Format("https://{0}/auth", httpClient.BaseAddress.Host));
+            string authUri = $"https://{httpClient.BaseAddress.Host}/auth";
+            string rawAuthResult = await httpClient.GetStringAsync(authUri);
             dynamic authResult = JObject.Parse(rawAuthResult);
             string urlCurrentToken = authResult.SelectToken("$._links.auth:token[?(@.name == 'current')].href").ToString();
 
@@ -307,6 +238,50 @@ namespace PlatformTools
             }
 
             return httpResponseMessage;
+        }
+
+        public static async Task<string> FindInRegistry(HttpClient httpClient, string apiDomain, string serviceType, string registryServiceVersion, string resourceName, string orDefaultUriTemplate, string realm)
+        {
+            httpClient.DefaultRequestHeaders.Remove("Accept");
+            httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
+
+            /// Check, whether simple search is supported:          
+            Uri serviceRootsResourceURL = new Uri($"https://{apiDomain}/apis/avid.ctms.registry;version={registryServiceVersion}/serviceroots");
+            using (HttpResponseMessage registryResultsResponse = await httpClient.GetAsync(serviceRootsResourceURL))
+            {
+                HttpStatusCode registryResultStatus = registryResultsResponse.StatusCode;
+                if (HttpStatusCode.OK == registryResultStatus)
+                {
+                    string rawSearchesResult = await registryResultsResponse.Content.ReadAsStringAsync();
+                    JObject serviceRootsResult = JObject.Parse(rawSearchesResult);
+                    JObject resources = (JObject)serviceRootsResult.GetValue("resources");
+                    var resourceToken = resources.GetValue(resourceName);
+
+                    if (resourceToken != null)
+                    {
+                        var candidateSystemIds
+                                    = resourceToken.SelectTokens("..systems..systemID")
+                                        .Select(it => it.ToString())
+                                        .ToArray();
+
+                        string effectiveRealm = null;
+                        if (!candidateSystemIds.Contains(realm))
+                        {
+                            effectiveRealm = candidateSystemIds.FirstOrDefault();
+                            Console.WriteLine($"'{resourceName}' was not available on realm {realm}. Falling back to {effectiveRealm}.");
+                        }
+
+                        string href = resourceToken.SelectToken($"..systems[?(@.systemID == '{effectiveRealm}')]").Parent.Parent.Parent["href"].ToString();
+                        return href;
+                    }
+                    else
+                    {
+                        return orDefaultUriTemplate;
+                    }
+                }
+            }
+
+            return null;
         }
     }
 }
