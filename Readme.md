@@ -13,7 +13,7 @@
 
 * Dependencies:
     * The projects using SDK examples make use of PlatformSDK.dll. This assembly, as well as a belonging to config file, reside in the folder lib.
-    * Additionally, these 3rd-party libraries are used: Json.NET Newtonsoft.Json 11.0.2, Tavis.UriTemplates 1.1.1 and WebApi.Hal 2.6.0 
+    * Additionally, these 3rd-party libraries are used: Newtonsoft.Json 11.0.2, Tavis.UriTemplates 1.1.1 and WebApi.Hal 2.6.0 
     * Each project in the solution brings its own packages.config file, in which the required NuGet packages are listed.
     * The Visual Studio solution is self contained, dependent libraries can be resolved via NuGet:
 		* The installation of required NuGet packages runs automatically, when the solution is opened. If that didn't happen, the packages can be reinstalled manually:
