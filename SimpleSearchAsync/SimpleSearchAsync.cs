@@ -58,7 +58,7 @@ namespace SimpleSearchAsync
 
             /// Check, whether simple search is supported:
             var registryServiceVersion = "0";
-            string defaultSimpleSearchUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/searches/simple?search={{search}}{{&offset,limit,sort}}", apiDomain, serviceType, 0, realm);
+            string defaultSimpleSearchUriTemplate = $"https://{apiDomain}/apis/{serviceType};version=0;realm={realm}/searches/simple?search={{search}}{{&offset,limit,sort}}";
             string simpleSearchUriTemplate = await PlatformTools.PlatformToolsAsync.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "search:simple-search", defaultSimpleSearchUriTemplate, realm);
 
             UriTemplate simpleSearchUrlTemplate = new UriTemplate(simpleSearchUriTemplate);
@@ -109,7 +109,7 @@ namespace SimpleSearchAsync
             return pages;
         }
 
-        public static async Task SimpleSearchAsyncImpl(string apiDomain, string serviceType, string realm, string oauth2token, string username, string password, string searchExpression)
+        public static async Task SimpleSearchAsyncImpl(string apiDomain, string serviceType, string realm, string httpBasicAuthString, string searchExpression)
         {
             HttpClient httpClient;
             try
@@ -146,7 +146,7 @@ namespace SimpleSearchAsync
 
             try
             {
-                httpClient = await PlatformTools.PlatformToolsAsync.Authorize(httpClient, identityProvidersResponse, apiDomain, oauth2token, username, password);
+                httpClient = await PlatformTools.PlatformToolsAsync.Authorize(httpClient, identityProvidersResponse, apiDomain, httpBasicAuthString);
             }
             catch (Exception e)
             {
@@ -201,23 +201,21 @@ namespace SimpleSearchAsync
 
         public static void Main(string[] args)
         {
-            if (7 != args.Length || "'".Equals(args[6]) || !args[6].StartsWith("'") || !args[6].EndsWith("'"))
+            if (5 != args.Length || "'".Equals(args[4]) || !args[4].StartsWith("'") || !args[4].EndsWith("'"))
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <servicetype> <realm> '<simplesearchexpression>'");
             }
             else
             {
                 string apiDomain = args[0];
-                string serviceType = args[1];
-                string realm = args[2];
-                string oauth2token = args[3];
-                string username = args[4];
-                string password = args[5];
-                string searchExpression = args[6].Trim('\'');
+                string httpBasicAuthString = args[1];
+                string serviceType = args[2];
+                string realm = args[3];
+                string searchExpression = args[4].Trim('\'');
 
                 try
                 {
-                    SimpleSearchAsyncImpl(apiDomain, serviceType, realm, oauth2token, username, password, searchExpression)
+                    SimpleSearchAsyncImpl(apiDomain, serviceType, realm, httpBasicAuthString, searchExpression)
                         .GetAwaiter()
                         .OnCompleted(() =>
                         {

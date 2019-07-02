@@ -10,6 +10,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Tavis.UriTemplates;
 
@@ -22,31 +23,29 @@ namespace AdvancedSearch
     {
         public static void Main(string[] args)
         {
-            if (7 != args.Length)
+            if (5 != args.Length)
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> <advancedsearchdescriptionfilename>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <servicetype> <realm> <advancedsearchdescriptionfilename>");
             }
             else
             {
                 string apiDomain = args[0];
-                string serviceType = args[1];
-                string realm = args[2];
-                string oauth2token = args[3];
-                string username = args[4];
-                string password = args[5];
-                string advancedSearchDescriptionFileName = args[6];
+                string httpBasicAuthString = args[1];
+                string serviceType = args[2];
+                string realm = args[3];               
+                string advancedSearchDescriptionFileName = args[4];
 
                 if (File.Exists(advancedSearchDescriptionFileName))
                 {
-                    HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
+                    HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, httpBasicAuthString);
 
                     bool successfullyAuthorized = null != httpClient;
                     if (successfullyAuthorized)
                     {
                         try
                         {
-                            var registryServiceVersion = "0";
-                            string defaultAdvancedSearchUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/searches", apiDomain, serviceType, 0, realm);
+                            string registryServiceVersion = "0";
+                            string defaultAdvancedSearchUriTemplate = $"https://{apiDomain}/apis/{serviceType};version=0;realm={realm}/searches";
                             string advancedSearchUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "search:searches", defaultAdvancedSearchUriTemplate, realm);
 
                             UriTemplate advancedSearchUrlTemplate = new UriTemplate(advancedSearchUriTemplate);
@@ -85,19 +84,20 @@ namespace AdvancedSearch
                                     int pageNo = 0;
                                     // Page through the result:
                                     StringBuilder sb = new StringBuilder();
+                                    sb.AppendLine(DateTime.Now.ToString());
                                     do
                                     {
                                         if (null != advancedSearchResult._embedded)
                                         {
                                             IEnumerable<dynamic> foundAssets = ((IEnumerable<dynamic>)advancedSearchResult._embedded["aa:asset"]);
 
-                                            sb.AppendLine(string.Format("Page#: {0}, search description from file '{1}'", ++pageNo, advancedSearchDescriptionFileName));
+                                            sb.AppendLine($"Page#: {++pageNo}, search description from file '{advancedSearchDescriptionFileName}'");
                                             foreach (dynamic asset in foundAssets)
                                             {
                                                 string id = asset["base"].id.ToString();
-                                                string name = null != asset["common"].name ? asset["common"].name.ToString() : string.Empty;
+                                                string name = asset["common"].name?.ToString() ?? string.Empty;
 
-                                                sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                                                sb.AppendLine($"Asset#: {++assetNo}, id: {id}, name: '{name}'");
                                             }
 
                                             // If we have more results, follow the next link and get the next page:
@@ -123,8 +123,9 @@ namespace AdvancedSearch
                             }
                             else
                             {
-                                Console.WriteLine("Failure accessing service.");
-                            }
+                                Console.WriteLine($"Resource {advancedSearchResultPageUrl} not found - {searchesResponse.ReasonPhrase}");
+                            } 
+                            
                         }
                         finally
                         {
@@ -138,7 +139,7 @@ namespace AdvancedSearch
                 }
                 else 
                 {
-                    Console.WriteLine("File '{0}' not found.", advancedSearchDescriptionFileName);
+                    Console.WriteLine($"File '{advancedSearchDescriptionFileName}' not found.");
                 }
 
                 Console.WriteLine("End");

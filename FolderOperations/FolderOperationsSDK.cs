@@ -12,7 +12,7 @@ namespace FolderOperations
             Console.WriteLine("Currently not supported!");
             if (6 != args.Length)
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <oauth2token> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <servicetype> <realm>");
             }
             else
             {

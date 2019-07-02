@@ -23,20 +23,17 @@ namespace OrchestrationProcessQuery
     {
         public static void Main(string[] args)
         {
-            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
+            if (4 != args.Length || "'".Equals(args[3]) || !args[3].StartsWith("'") || !args[3].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <realm> '<simplesearchexpression>'");
             }
             else
             {
                 string apiDomain = args[0];
-                string realm = args[1];
-                string oauth2token = args[2];
-                string username = args[3];
-                string password = args[4];
-                string rawSearchExpression = args[5].Trim('\'');
-
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
+                string httpBasicAuthString = args[1];
+                string realm = args[2];
+                string rawSearchExpression = args[3].Trim('\'');
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, httpBasicAuthString);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
@@ -46,7 +43,7 @@ namespace OrchestrationProcessQuery
                         const string orchestrationServiceType = "avid.orchestration.ctc";
                         
                         var registryServiceVersion = "0";
-                        string defaultProcessQueryUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/process-queries/{{id}}{{?offset,limit,sort}}", apiDomain, orchestrationServiceType, 0, realm);
+                        string defaultProcessQueryUriTemplate = $"https://{apiDomain}/apis/{orchestrationServiceType};version=0;realm={realm}/process-queries/{{id}}{{?offset,limit,sort}}";
                         string processQueryUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, orchestrationServiceType, registryServiceVersion, "orchestration:process-query", defaultProcessQueryUriTemplate, realm);
 
                         /// Doing the process query and write the results to stdout:
@@ -57,7 +54,7 @@ namespace OrchestrationProcessQuery
                         httpClient.DefaultRequestHeaders.Add("Accept", "application/hal+json");
                         
                         /// Get the orchestration resource to query process instances:
-                        string queryExpression = "<query version='1.0'><search><quick>"+rawSearchExpression+"</quick></search></query>";
+                        string queryExpression = $"<query version='1.0'><search><quick>{rawSearchExpression}</quick></search></query>";
                         JObject query = new JObject(new JProperty("query", queryExpression));
                     
                         /// Check presence of the orchestration resource and continue with HATEOAS:
@@ -76,13 +73,13 @@ namespace OrchestrationProcessQuery
                                 IEnumerable<dynamic> foundProcessInstances = ((IEnumerable<dynamic>)processQueryResult._embedded["orchestration:process"]);
                                 if (foundProcessInstances.Any())
                                 {
-                                    sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, rawSearchExpression));
+                                    sb.AppendLine($"Page#: {++pageNo}, search expression: '{rawSearchExpression}'");
                                     foreach (dynamic processInstance in foundProcessInstances)
                                     {
                                         string id = processInstance["base"].id.ToString();
                                         string name = null != processInstance["common"].name ? processInstance["common"].name.ToString() : string.Empty;
 
-                                        sb.AppendLine(string.Format("ProcessItem#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                                        sb.AppendLine($"ProcessItem#: {++assetNo}, id: {id}, name: '{name}'");
                                     }
                                 }
 
@@ -101,10 +98,9 @@ namespace OrchestrationProcessQuery
                         }
                         else
                         {
-                            sb.AppendFormat("Querying processes failed with '{0}'.", response.ReasonPhrase);
+                            sb.AppendFormat($"Querying processes failed with '{response.ReasonPhrase}'.");
                         }
-                        Console.WriteLine(sb);
-                     
+                        Console.WriteLine(sb);                     
                     }
                     finally
                     {

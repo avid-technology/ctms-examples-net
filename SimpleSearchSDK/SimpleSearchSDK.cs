@@ -22,23 +22,21 @@ namespace SimpleSearchSDK
     {
         public static void Main(string[] args)
         {
-            if (7 != args.Length || "'".Equals(args[6]) || !args[6].StartsWith("'") || !args[6].EndsWith("'"))
+            if (5 != args.Length || "'".Equals(args[4]) || !args[4].StartsWith("'") || !args[4].EndsWith("'"))
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpBasicAuthString> <servicetype> <realm> '<simplesearchexpression>'");
             }
             else
             {             
                 string apiDomain = args[0];
-                string serviceType = args[1];
-                string realm = args[2];
-                string oauth2token = args[3];
-                string username = args[4];
-                string password = args[5];
-                string rawSearchExpression = args[6].Trim('\'');
+                string httpBasicAuthString = args[1];
+                string serviceType = args[2];
+                string realm = args[3];               
+                string rawSearchExpression = args[4].Trim('\'');
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
 
-                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString)))
                 {
                     const string registeredLinkRelSearches = "search:searches";
                     Searches searchesResource = PlatformTools.PlatformToolsSDK.FindInRegistry<Searches>(registryClient, serviceType, realm, registeredLinkRelSearches);

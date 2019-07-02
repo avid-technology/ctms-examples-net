@@ -108,26 +108,24 @@ namespace FastPrintFolderStructure
             }
             else
             {
-                Console.WriteLine("Get item failed for item <{0}>.", itemUrl);
+                Console.WriteLine($"Get item failed for item <{itemUrl}>.");
             }
         }
 
         public static void Main(string[] args)
         {
             int serviceVersion;
-            if (7 != args.Length || !int.TryParse(args[2], out serviceVersion))
+            if (5 != args.Length || !int.TryParse(args[3], out serviceVersion))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <serviceversion> <realm> <oauth2token> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpBasicAuthString> <servicetype> <serviceversion> <realm>");
             }
             else
             {
                 string apiDomain = args[0];
-                string serviceType = args[1];                
-                string realm = args[3];
-                string oauth2token = args[4];
-                string username = args[5];
-                string password = args[6];
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
+                string httpBasicAuthString = args[1];
+                string serviceType = args[2];                
+                string realm = args[4];                
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, httpBasicAuthString);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
@@ -135,7 +133,7 @@ namespace FastPrintFolderStructure
                     try
                     {
                         var registryServiceVersion = "0";
-                        string defaultLocationsUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/locations", apiDomain, serviceType, 0, realm);
+                        string defaultLocationsUriTemplate = $"https://{apiDomain}/apis/{serviceType};version=0;realm={realm}/locations";
                         string locationsUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "loc:locations", defaultLocationsUriTemplate, realm);
 
                         Uri locationsURL = new Uri(locationsUriTemplate);
@@ -167,22 +165,20 @@ namespace FastPrintFolderStructure
                             watch.Start();
                             Traverse(httpClient, rootItemUrl, results, 0);
                             StringBuilder sb = new StringBuilder();
+                            sb.AppendLine(DateTime.Now.ToString());
                             foreach (HierarchicalItem item in results)
                             {
-                                string text = string.Format("{0}{1}depth: {2} {3}"
-                                                , new string('\t', item.Item2)
-                                                , null != item.Item1._links["loc:collection"] ? "- (collection) " : string.Empty
-                                                , item.Item2
-                                                , item.Item1["common"].name);
+                                string text = $"{new string('\t', item.Item2)}{(null != item.Item1._links["loc:collection"] ? "- (collection) " : string.Empty)}depth: {item.Item2} {item.Item1["common"].name}";
                                 sb.AppendLine(text);
                             }
                             Console.WriteLine(sb);
                             watch.Stop();
-                            Console.WriteLine("elapsed: {0}", watch.ElapsedMilliseconds);
+                            Console.WriteLine($"elapsed: {watch.ElapsedMilliseconds}");
                         }
                         else
                         {
-                            Console.WriteLine("Resource {0} not found", locationsURL);
+                            Console.WriteLine($"Resource {locationsURL} not found - {result.ReasonPhrase}");
+
                         }
                     }
                     finally

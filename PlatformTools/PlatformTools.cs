@@ -49,17 +49,15 @@ namespace PlatformTools
         }
 
         /// <summary>
-        /// OAuth2-identity-provider based authorization via via credentials and an OAuth2Token (= HTTP basic auth string).
+        /// OAuth2-identity-provider based authorization via an HTTP Basic Auth String.
         /// The used server-certificate validation is tolerant. Creates an authorized HttpClient instance,
         /// following the OAuth2-identity-provider authorization strategy.
         /// Just use the returned HttpClient instance for future calls against the platform.
         /// </summary>
         /// <param name="apiDomain">address to get "auth"</param>
-        /// <param name="OAuth2Token">OAuth2 token</param>
-        /// <param name="username">Platform login</param>
-        /// <param name="password">Platform password</param>
+        /// <param name="httpBasicAuthString">HTTP Basic Auth String</param>
         /// <returns>An authorized HttpClient instance, or null if something went wrong, esp. authorization went wrong.</returns>
-        public static HttpClient Authorize(string apiDomain, string OAuth2Token, string username, string password)
+        public static HttpClient Authorize(string apiDomain, string httpBasicAuthString)
         {
             WebRequestHandler webRequesthandler = DefaultWebRequestHandler(false);
 
@@ -91,9 +89,8 @@ namespace PlatformTools
             // Do the login:
             IDictionary<string, string> loginArguments = new Dictionary<string, string>(3)
             {
-                { "username", username },
-                { "password", password },
-                { "grant_type", "password" },
+                { "grant_type", "client_credentials" },
+                { "scope", "openid" }
             };
 
             using (HttpContent content = new FormUrlEncodedContent(loginArguments))
@@ -101,18 +98,18 @@ namespace PlatformTools
                 using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, OAuth2EndPoint) { Content = content })
                 {
                     request.Headers.Add("Accept", "application/json");
-                    request.Headers.Add("Authorization", "Basic " + OAuth2Token);
+                    request.Headers.Add("Authorization", "Basic " + httpBasicAuthString);
 
                     using (HttpResponseMessage result = httpClient.SendAsync(request).Result)
                     {
                         if (HttpStatusCode.RedirectMethod == result.StatusCode || result.IsSuccessStatusCode)
                         {
                             string rawAuthorizationData = result.Content.ReadAsStringAsync().Result;
-                            dynamic authorizationData = JObject.Parse(rawAuthorizationData);                      
-                            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+                            dynamic authorizationData = JObject.Parse(rawAuthorizationData);
+                            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", $"avidAccessToken={authorizationData.access_token}");
 
                             HttpClient httpKeepAliveClient = new HttpClient(DefaultWebRequestHandler(false));
-                            httpKeepAliveClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+                            httpKeepAliveClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", $"avidAccessToken={authorizationData.access_token}");
                             httpKeepAliveClient.BaseAddress = new Uri($"http://{apiDomain}");
                             httpKeepAliveClient.DefaultRequestHeaders.Add("Accept", "application/json");
                             tokenSource = new CancellationTokenSource();
@@ -125,7 +122,14 @@ namespace PlatformTools
                                             await Task.Delay(120000, tokenSource.Token).ConfigureAwait(false);
                                             tokenSource.Token.ThrowIfCancellationRequested();
 
-                                            SessionKeepAlive(httpKeepAliveClient);
+                                            try
+                                            {
+                                                SessionKeepAlive(httpKeepAliveClient);
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                Console.WriteLine($"Platform session refresher error. - {e.Message}");
+                                            }
                                         }
                                     }
                                     , null
@@ -150,19 +154,19 @@ namespace PlatformTools
         /// <param name="httpClient">The HttpClient against the platform.</param>
         public static void SessionKeepAlive(HttpClient httpClient)
         {
-            string urlExtend = $"https://{httpClient.BaseAddress.Host}/auth/tokens/current/extension";
-            try
+            string rawAuthResult = httpClient.GetStringAsync($"https://{httpClient.BaseAddress.Host}/auth").Result;
+            dynamic authResult = JObject.Parse(rawAuthResult);
+            string urlCurrentToken = authResult._links["auth:token"][0].href;
+
+            string rawCurrentTokenResult = httpClient.GetStringAsync(urlCurrentToken).Result;
+            dynamic currentTokenResult = JObject.Parse(rawCurrentTokenResult);
+
+            string urlExtend = currentTokenResult._links["auth-token:extend"][0].href;
+            using (HttpContent refreshRequestContent = new StringContent(string.Empty))
             {
-                using (HttpContent refreshRequestContent = new StringContent(string.Empty))
+                using (HttpResponseMessage httpResponseMessage = httpClient.PostAsync(urlExtend, refreshRequestContent).Result)
                 {
-                    using (HttpResponseMessage httpResponseMessage = httpClient.PostAsync(urlExtend, refreshRequestContent).Result)
-                    {
-                    }
                 }
-            }
-            catch
-            {
-                // Nothing. Usually those exceptions can be ignored.
             }
         }
 
@@ -198,7 +202,7 @@ namespace PlatformTools
                     // Yes, this is expected.
                 }
             }
-        }        
+        }
 
         public static string FindInRegistry(HttpClient httpClient, string apiDomain, string serviceType, string registryServiceVersion, string resourceName, string orDefaultUriTemplate, string realm)
         {
@@ -220,11 +224,11 @@ namespace PlatformTools
                     if (resourceToken != null)
                     {
                         var candidateSystemIds
-                                    = resourceToken.SelectTokens("..systems..systemID")                                        
+                                    = resourceToken.SelectTokens("..systems..systemID")
                                         .Select(it => it.ToString())
                                         .ToArray();
 
-                        string effectiveRealm = null;
+                        string effectiveRealm = realm;
                         if (!candidateSystemIds.Contains(realm))
                         {
                             effectiveRealm = candidateSystemIds.FirstOrDefault();
@@ -236,12 +240,12 @@ namespace PlatformTools
                     }
                     else
                     {
-                        return orDefaultUriTemplate;                        
+                        return orDefaultUriTemplate;
                     }
                 }
             }
 
-            return null;               
+            return null;
         }
     }
 }

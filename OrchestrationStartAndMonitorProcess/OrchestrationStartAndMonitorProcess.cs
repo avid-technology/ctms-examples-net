@@ -21,19 +21,17 @@ namespace OrchestrationStartAndMonitorProcess
     {
         public static void Main(string[] args)
         {
-            if (5 != args.Length)
+            if (3 != args.Length)
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <realm> <oauth2token> <username> <password>");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <realm>");
             }
             else
             {
                 string apiDomain = args[0];
-                string realm = args[1];
-                string oauth2token = args[2];
-                string username = args[3];
-                string password = args[4];
+                string httpBasicAuthString = args[1];
+                string realm = args[2];
 
-                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password);
+                HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, httpBasicAuthString);
 
                 bool successfullyAuthorized = null != httpClient;
                 if (successfullyAuthorized)
@@ -43,7 +41,7 @@ namespace OrchestrationStartAndMonitorProcess
                         const string orchestrationServiceType = "avid.orchestration.ctc";
 
                         var registryServiceVersion = "0";
-                        string defaultProcessUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/processes/{{id}}", apiDomain, orchestrationServiceType, 0, realm);
+                        string defaultProcessUriTemplate = $"https://{apiDomain}/apis/{orchestrationServiceType};version=0;realm={realm}/processes/{{id}}";
                         string processUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, orchestrationServiceType, registryServiceVersion, "orchestration:process", defaultProcessUriTemplate, realm);
 
                         UriTemplate startProcessTemplate = new UriTemplate(processUriTemplate);
@@ -66,7 +64,7 @@ namespace OrchestrationStartAndMonitorProcess
                             /// Create an export process:
                             string now = DateTime.Now.ToUniversalTime().ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fffK");
                             const string itemToExport = "2016050410152760101291561460050569B02260000003692B00000D0D000005";
-                            string newProcessName = string.Format("New process as to {0}", DateTime.Now).Replace(" ", "_").Replace(":", "_").Replace("-", "_");
+                            string newProcessName = $"New process as to {DateTime.Now}".Replace(" ", "_").Replace(":", "_").Replace("-", "_");
                             string newProcessId = Guid.NewGuid().ToString();
                             JObject processDescription
                                 = new JObject(
@@ -117,8 +115,8 @@ namespace OrchestrationStartAndMonitorProcess
                             string urlStartedProcess = startProcessResult._links.self.href.ToString();
                             string lifecycle = startProcessResult.lifecycle.ToString();
 
-                            Console.WriteLine("Process: '{0}' - start initiated", newProcessName);
-                            Console.WriteLine("Lifecycle: {0}", lifecycle);
+                            Console.WriteLine($"Process: '{newProcessName}' - start initiated");
+                            Console.WriteLine($"Lifecycle: {lifecycle}");
                             if ("pending".Equals(lifecycle) || "running".Equals(lifecycle))
                             {
                                 do
@@ -127,14 +125,14 @@ namespace OrchestrationStartAndMonitorProcess
                                     rawStartedProcessResult = httpClient.GetStringAsync(urlStartedProcess).Result;
                                     startProcessResult = JObject.Parse(rawStartedProcessResult);
                                     lifecycle = startProcessResult.lifecycle.ToString();
-                                    Console.WriteLine("Lifecycle: {0}", lifecycle);
+                                    Console.WriteLine($"Lifecycle: {lifecycle}");
                                 }
                                 while ("running".Equals(lifecycle) || "pending".Equals(lifecycle));
                             }
                         }
                         else
                         {
-                            Console.WriteLine("Resource <{0}> not found", startProcessURL);
+                            Console.WriteLine($"Resource <{startProcessURL}> not found");
                         }
                     }
                     finally

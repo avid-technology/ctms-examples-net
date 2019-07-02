@@ -26,20 +26,18 @@ namespace OrchestrationStartProcessSDK
     {
         public static void Main(string[] args)
         {
-            if (5 != args.Length)
+            if (3 != args.Length)
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <realm> <oauth2token> <username> <password>");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <realm>");
             }
             else
             {
                 string apiDomain = args[0];
-                string realm = args[1];
-                string oauth2token = args[2];
-                string username = args[3];
-                string password = args[4];
+                string httpBasicAuthString = args[1];
+                string realm = args[2];
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
-                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString)))
                 {
                     const string registeredLinkRelOrchestrationRoot = "orchestration:orchestration";
                     const string orchestrationServiceType = "avid.orchestration.ctc";
@@ -60,7 +58,7 @@ namespace OrchestrationStartProcessSDK
                             /// Create and start an export process with attachments:
                             string now = DateTime.Now.ToUniversalTime().ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fffK");
                             const string itemToExport = "2016050410152760101291561460050569B02260000003692B00000D0D000005";
-                            string newProcessName = string.Format("New process as to {0}", DateTime.Now).Replace(" ", "_").Replace(":", "_").Replace("-", "_");
+                            string newProcessName = $"New process as to {DateTime.Now}".Replace(" ", "_").Replace(":", "_").Replace("-", "_");
                             string newProcessId = Guid.NewGuid().ToString();
                             JObject processDescription
                                 = new JObject(
@@ -98,8 +96,8 @@ namespace OrchestrationStartProcessSDK
                                 );
 
                             Process process = registryClient.SendHal<Process>(HttpMethod.Post, new Uri(orchestrationProcessQueryUri), processDescription);
-                            Console.WriteLine("Process: '{0}' - start initiated", newProcessName);
-                            Console.WriteLine("Lifecycle: {0}", process.LifeCycle);
+                            Console.WriteLine($"Process: '{newProcessName}' - start initiated");
+                            Console.WriteLine($"Lifecycle: {process.LifeCycle}");
                             /// Monitor the running process:                                
                             while ("running".Equals(process.LifeCycle) || "pending".Equals(process.LifeCycle))
                             {
@@ -110,7 +108,7 @@ namespace OrchestrationStartProcessSDK
                                 Tavis.UriTemplates.UriTemplate orchestrationGetProcessUriTemplate = new Tavis.UriTemplates.UriTemplate(orchestrationGetProcessLink.Href);
                                 orchestrationGetProcessUriTemplate.SetParameter("id", newProcessId);
                                 process = registryClient.GetHalResource<Process>(new Uri(orchestrationGetProcessUriTemplate.Resolve()));
-                                Console.WriteLine("Lifecycle: {0}", process.LifeCycle);
+                                Console.WriteLine($"Lifecycle: {process.LifeCycle}");
                             }
                         }
                     }

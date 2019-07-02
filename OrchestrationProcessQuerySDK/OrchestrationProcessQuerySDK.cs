@@ -24,22 +24,20 @@ namespace OrchestrationProcessQuerySDK
     {        
         public static void Main(string[] args)
         {
-            if (6 != args.Length || "'".Equals(args[5]) || !args[5].StartsWith("'") || !args[5].EndsWith("'"))
+            if (4 != args.Length || "'".Equals(args[3]) || !args[3].StartsWith("'") || !args[3].EndsWith("'"))
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <realm> '<simplesearchexpression>'");
             }
             else
             {
                 string apiDomain = args[0];
-                string realm = args[1];
-                string oauth2token = args[2];
-                string username = args[3];
-                string password = args[4];
-                string rawSearchExpression = args[5].Trim('\'');
+                string httpBasicAuthString = args[1];
+                string realm = args[2];
+                string rawSearchExpression = args[3].Trim('\'');
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
 
-                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString)))
                 {
                     const string registeredLinkRelOrchestrationRoot = "orchestration:orchestration";
                     const string orchestrationServiceType = "avid.orchestration.ctc";
@@ -58,7 +56,7 @@ namespace OrchestrationProcessQuerySDK
                             string orchestrationProcessQueryUri = orchestrationProcessQueryUriTemplate.Resolve();
 
                             /// Create the process query:
-                            string queryExpression = "<query version='1.0'><search><quick>" + rawSearchExpression + "</quick></search></query>";
+                            string queryExpression = $"<query version='1.0'><search><quick>{rawSearchExpression}</quick></search></query>";
                             JObject query = new JObject(new JProperty("query", queryExpression));
                             ProcessQuery result = registryClient.SendHal<ProcessQuery>(HttpMethod.Post, new Uri(orchestrationProcessQueryUri), query);
 

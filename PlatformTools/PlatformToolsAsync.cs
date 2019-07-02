@@ -72,7 +72,7 @@ namespace PlatformTools
             return JObject.Parse(rawIdentityProvidersResult);
         }
 
-        public static async Task<HttpClient> Authorize(HttpClient httpClient, JObject response, string apiDomain, string OAuth2Token, string username, string password)
+        public static async Task<HttpClient> Authorize(HttpClient httpClient, JObject response, string apiDomain, string httpBasicAuthString)
         {
             // Select OAuth2 identity provider and retrieve login URL:
             dynamic dynamicResponseHandle = response;
@@ -87,16 +87,15 @@ namespace PlatformTools
             // Do the login:
             IDictionary<string, string> loginArguments = new Dictionary<string, string>(3)
             {
-                { "username", username },
-                { "password", password },
-                { "grant_type", "password" },
+                { "grant_type", "client_credentials" },
+                { "scope", "openid" }
             };
 
             using (HttpContent content = new FormUrlEncodedContent(loginArguments))
             {
                 using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, OAuth2EndPoint) { Content = content })
                 {
-                    request.Headers.Add("Authorization", "Basic " + OAuth2Token);
+                    request.Headers.Add("Authorization", $"Basic {httpBasicAuthString}");
 
                     using (HttpResponseMessage result = await httpClient.SendAsync(request))
                     {
@@ -114,10 +113,10 @@ namespace PlatformTools
 
                             string rawAuthorizationData = result.Content.ReadAsStringAsync().Result;
                             dynamic authorizationData = JObject.Parse(rawAuthorizationData);
-                            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+                            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", $"avidAccessToken={authorizationData.access_token}");
 
                             HttpClient httpKeepAliveClient = new HttpClient(webRequesthandler);
-                            httpKeepAliveClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", "avidAccessToken=" + authorizationData.access_token);
+                            httpKeepAliveClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", $"avidAccessToken={authorizationData.access_token}");
                             httpKeepAliveClient.Timeout = DefaultRequestTimeout;
                             httpKeepAliveClient.BaseAddress = new Uri($"http://{apiDomain}");
                             httpKeepAliveClient.DefaultRequestHeaders.Add("Accept", "application/json");
@@ -187,12 +186,20 @@ namespace PlatformTools
         /// <param name="httpClient">The HttpClient against the platform.</param>
         public static async void SessionKeepAlive(HttpClient httpClient) 
         {
-            string urlExtend = $"https://{httpClient.BaseAddress.Host}/auth/tokens/current/extension";
+            string rawAuthResult = await httpClient.GetStringAsync($"https://{httpClient.BaseAddress.Host}/auth");
+            dynamic authResult = JObject.Parse(rawAuthResult);
+            string urlCurrentToken = authResult._links["auth:token"][0].href;
+
+            string rawCurrentTokenResult = await httpClient.GetStringAsync(urlCurrentToken);
+            dynamic currentTokenResult = JObject.Parse(rawCurrentTokenResult);
+
+            string urlExtend = currentTokenResult._links["auth-token:extend"][0].href;
+
             try
             {
                 using (HttpContent refreshRequestContent = new StringContent(string.Empty))
                 {
-                    using (HttpResponseMessage httpResponseMessage = httpClient.PostAsync(urlExtend, refreshRequestContent).Result)
+                    using (HttpResponseMessage httpResponseMessage = await httpClient.PostAsync(urlExtend, refreshRequestContent))
                     {
                     }
                 }
@@ -264,7 +271,7 @@ namespace PlatformTools
                                         .Select(it => it.ToString())
                                         .ToArray();
 
-                        string effectiveRealm = null;
+                        string effectiveRealm = realm;
                         if (!candidateSystemIds.Contains(realm))
                         {
                             effectiveRealm = candidateSystemIds.FirstOrDefault();

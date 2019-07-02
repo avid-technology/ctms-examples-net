@@ -76,22 +76,20 @@ namespace FastPrintFolderStructureSDK
         public static void Main(string[] args)
         {
             int serviceVersion;
-            if (7 != args.Length || !int.TryParse(args[2], out serviceVersion))
+            if (5 != args.Length || !int.TryParse(args[3], out serviceVersion))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <serviceversion> <realm> <oauth2token> <username> <password>", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <servicetype> <serviceversion> <realm>");
             }
             else
             {
                 string apiDomain = args[0];
-                string serviceType = args[1];
-                string realm = args[3];
-                string oauth2token = args[4];
-                string username = args[5];
-                string password = args[6];
+                string httpBasicAuthString = args[1];
+                string serviceType = args[2];
+                string realm = args[4];
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
 
-                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oauth2token, username, password)))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString)))
                 {
                     IList<HierarchicalItem> results = new List<HierarchicalItem>();
                     Stopwatch watch = new Stopwatch();
@@ -107,16 +105,12 @@ namespace FastPrintFolderStructureSDK
                     StringBuilder sb = new StringBuilder();
                     foreach (HierarchicalItem item in results)
                     {
-                        string text = string.Format("{0}{1}depth: {2} {3}"
-                                       , new string('\t', item.Item2)
-                                       , item.Item1.DiscoverLinks("loc:collection").Any() ? "- (collection) " : string.Empty
-                                       , item.Item2
-                                       , item.Item1.Common.Name);
+                        string text = $"{new string('\t', item.Item2)}{(item.Item1.DiscoverLinks("loc:collection").Any() ? "- (collection) " : string.Empty)}depth: {item.Item2} {item.Item1.Common.Name}";
                         sb.AppendLine(text);
                     }
                     Console.WriteLine(sb);
                     watch.Stop();
-                    Console.WriteLine("elapsed: {0}", watch.ElapsedMilliseconds);
+                    Console.WriteLine($"elapsed: {watch.ElapsedMilliseconds}");
                 }
 
                 Console.WriteLine("End");

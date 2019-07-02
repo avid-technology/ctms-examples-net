@@ -22,21 +22,19 @@ namespace SimpleSearch
     {
         public static void Main(string[] args)
         {
-            if (7 != args.Length || "'".Equals(args[6]) || !args[6].StartsWith("'") || !args[6].EndsWith("'"))
+            if (5 != args.Length || "'".Equals(args[4]) || !args[4].StartsWith("'") || !args[4].EndsWith("'"))
             {
-                Console.WriteLine("Usage: {0} <apidomain> <servicetype> <realm> <oauth2token> <username> <password> '<simplesearchexpression>'", System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name);
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring> <servicetype> <realm> '<simplesearchexpression>'");
             }
             else
             {
                 string apiDomain = args[0];
-                string serviceType = args[1];
-                string realm = args[2];
-                string oauth2token = args[3];
-                string username = args[4];
-                string password = args[5];
-                string rawSearchExpression = args[6].Trim('\'');
+                string httpBasicAuthString = args[1];
+                string serviceType = args[2];
+                string realm = args[3];
+                string rawSearchExpression = args[4].Trim('\'');
 
-                using (HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, oauth2token, username, password))
+                using (HttpClient httpClient = PlatformTools.PlatformTools.Authorize(apiDomain, httpBasicAuthString))
                 {
                     bool successfullyAuthorized = null != httpClient;
                     if (successfullyAuthorized)
@@ -44,7 +42,7 @@ namespace SimpleSearch
                         try
                         {
                             var registryServiceVersion = "0";
-                            string defaultSimpleSearchUriTemplate = string.Format("https://{0}/apis/{1};version={2};realm={3}/searches/simple?search={{search}}{{&offset,limit,sort}}", apiDomain, serviceType, 0, realm);
+                            string defaultSimpleSearchUriTemplate = $"https://{apiDomain}/apis/{serviceType};version=0;realm={realm}/searches/simple?search={{search}}{{&offset,limit,sort}}";
                             string simpleSearchUriTemplate = PlatformTools.PlatformTools.FindInRegistry(httpClient, apiDomain, serviceType, registryServiceVersion, "search:simple-search", defaultSimpleSearchUriTemplate, realm);
 
                             UriTemplate simpleSearchUrlTemplate = new UriTemplate(simpleSearchUriTemplate);
@@ -87,19 +85,19 @@ namespace SimpleSearch
                                                             .AsEnumerable<dynamic>();
                                                     if (results.Any())
                                                     {
-                                                        sb.AppendLine(string.Format("Page#: {0}, search expression: '{1}'", ++pageNo, rawSearchExpression));
+                                                        sb.AppendLine($"Page#: {++pageNo}, search expression: '{rawSearchExpression}'");
                                                         foreach (var item in results)
                                                         {
                                                             string id = item["base"].id.ToString();
                                                             string name = item["common"].name?.ToString();
 
-                                                            sb.AppendLine(string.Format("Asset#: {0}, id: {1}, name: '{2}'", ++assetNo, id, name));
+                                                            sb.AppendLine($"Asset#: {++assetNo}, id: {id}, name: '{name}'");
                                                         }
                                                     }
                                                 }
                                                 else
                                                 {
-                                                    Console.WriteLine("No results found for search expression '{0}'.", rawSearchExpression);
+                                                    Console.WriteLine($"No results found for search expression '{rawSearchExpression}'.");
                                                 }
 
                                                 // If we have more results, follow the next link and get the next page:
@@ -112,7 +110,7 @@ namespace SimpleSearch
                                             else
                                             {
                                                 simpleSearchResultPageUrl = null;
-                                                Console.WriteLine("Search failed for search expression '{0}'.", rawSearchExpression);
+                                                Console.WriteLine($"Search failed for search expression '{rawSearchExpression}'.");
                                             }
                                         }
                                     }

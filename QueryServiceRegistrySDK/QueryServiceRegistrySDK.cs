@@ -1,9 +1,11 @@
 ﻿using Avid.Platform.SDK;
 using Avid.Platform.SDK.Authorization;
+using Avid.Platform.SDK.Authorization.AuxTypes;
 using Avid.Platform.SDK.Model.CtmsRegistry;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 
 namespace QueryServiceRegistrySDK
 {
@@ -14,20 +16,26 @@ namespace QueryServiceRegistrySDK
         /// </summary>
         static void Main(string[] args)
         {
-            if (4 != args.Length)
+            if (2 != args.Length)
             {
-                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <oauth2token> <username> <password>");
+                Console.WriteLine($"Usage: {System.Reflection.Assembly.GetEntryAssembly().ManifestModule.Name} <apidomain> <httpbasicauthstring>");
             }
             else
             {
                 string apiDomain = args[0];
-                string oAuth2Token = args[1];
-                string username = args[2];
-                string password = args[3];
+                string httpBasicAuthString = args[1];
 
                 Uri upstreamServerUrl = new Uri($"https://{apiDomain}");
-                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(new OAuth2AuthorizationConnection(upstreamServerUrl, oAuth2Token, username, password)))
-                {
+                // openId connect:
+                using (IPlatformConnection connection = new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString))
+                // client_credentials with extension This method creates a session for the given login name supporting "client credentials" login.
+                //using (IPlatformConnection connection = new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString, username))
+                // Using credentials with platform extension:
+                //using (IPlatformConnection connection = new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString, username, password))
+                // Using credentials with OAuth2 refresh_token:
+                //using (IPlatformConnection connection = new OAuth2AuthorizationConnection(upstreamServerUrl, httpBasicAuthString, username, password, RefreshType.OAuth2))
+                using (CtmsRegistryClient registryClient = new CtmsRegistryClient(connection))
+                {                   
                     CtmsRegistryInfo registryInfo = registryClient.GetRegistryInfo();
                     StringBuilder sb = new StringBuilder();
                     foreach (KeyValuePair<string, CtmsResourceInfo[]> resourceInfo in registryInfo.Resources)
@@ -49,7 +57,7 @@ namespace QueryServiceRegistrySDK
                                     sb.AppendLine($"\t\tName: {item.Key}, Value: {item.Value}");
                                 }
                             }
-                                
+
                             if (null != resourceInfoSpecificSystem.TemplateParameters)
                             {
                                 sb.AppendLine($"\t\t TemplateParameters:");
@@ -60,8 +68,7 @@ namespace QueryServiceRegistrySDK
                             }
                         }
                     }
-
-                    Console.WriteLine(sb);
+                    Console.WriteLine(sb);                    
                     Console.WriteLine("End");
                 }
             }
