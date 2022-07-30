@@ -3,7 +3,6 @@
     * The examples are implemented with C# 6/.NET 4.7.2 (target framework) and Visual Studio 2017.
     * There are two categories of examples: those using the PlatformSDK (projects to be identified with the suffix "SDK") and those using REST and HATEOAS directly.
 	* The examples apply a lot of code repetition to keep them self contained.
-    * The example SimpleSearchAsync shows, how asynchronous HTTP requests can be applied to use CTMS.
 	* The non-PlatformSDK examples are configured to use a request timeout of 60s each.
 	* There are some error checks but those are very general and might not cover all cases. Esp. timeouts or unreachable endpoints could happen at any time during the application of REST and HATEOAS.
     * No optimization and no parallelization (e.g. for requesting results from the platform) was implemented.
@@ -25,18 +24,7 @@
 				* Issue the command "update-package -reinstall".
 
 * Running the examples:
-    * => When running the executables on a terminal, make sure you have specified correct command line arguments: __ExampleApplicationName__ _apidomain_ _httpbasicauthstring_ _[servicetype]_ _[serviceversion]_ _[realm]_ _['searchexpression']_ _[advancedsearchdescriptionfilename]_
-    * The SimpleSearch/SimpleSearchAsync examples await the searchexpression in single quotes as last argument:
-        * SimpleSearch.exe _apidomain_ _httpbasicauthstring_ _servicetype_ _realm_ '_searchexpression_'
-        * Example: SimpleSearch upstream UZ86FbYI76534 avid.mam.assets.access BEEF '*'
-		* SimpleSearchAsync.exe _apidomain_ _httpbasicauthstring_ _servicetype_ _realm_ '_searchexpression_'
-        * Example: SimpleSearchAsync upstream UZ86FbYI76534 avid.mam.assets.access BEEF '*'
-    * The AdvancedSearch example awaits the file name of a file containing the advanced search description as last argument:
-        * AdvancedSearch.exe _apidomain_ _httpbasicauthstring_ _servicetype_ _realm_ _advancedsearchdescriptionfilename_
-        * Example: AdvancedSearch upstream UZ86FbYI76534 avid.mam.assets.access BEEF Resources\MAMAdvancedSearchDescription.txt
-    * The SimpleSearchSDK and OrchestrationXXXSDK examples awaits the searchexpression in single quotes as last argument:
-        * SimpleSearchSDK|OrchestrationXXXSDK _apidomain_ _httpbasicauthstring_ _servicetype_ _realm_ '_searchexpression_'
-        * Example: SimpleSearchSDK upstream UZ86FbYI76534 BEEF '*'
+    * => When running the executables on a terminal, make sure you have specified correct command line arguments: __ExampleApplicationName__ _apidomain_ _httpbasicauthstring_ _[servicetype]_ _[serviceversion]_ _[realm]_
     * The QueryServiceRegistry example needs no servicetype (always "avid.ctms.registry") and no realm (always "global"/"") argument.
         * QueryServiceRegistry.exe _apidomain_ _httpbasicauthstring_
         * Example: QueryServiceRegistry upstream UZ86FbYI76534
